@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { motion } from 'framer-motion'
+import { useEffect, useRef, useState } from 'react'
+import { motion, useMotionValue, animate } from 'framer-motion'
 import { Pause, Play, Disc3, Music2, Loader2 } from 'lucide-react'
 import type { Track } from '../types'
 
@@ -211,11 +211,18 @@ function CoverArt({ src, title }: { src: string; title: string }) {
   )
 }
 
+/** Resting angle when off the record, and engaged angle resting on it. */
+const ARM_OFF = -6
+const ARM_ON = 28
+const ARM_MID = (ARM_OFF + ARM_ON) / 2
+const SPRING = { type: 'spring' as const, stiffness: 130, damping: 15 }
+
 /**
- * A draggable tonearm. Drag it down onto the record to start playing; lift it
- * up/away to pause. When idle it gives a gentle periodic nudge to hint that it
- * can be grabbed. The arm translates with the drag and snaps to the on/off
- * resting angle on release.
+ * A draggable tonearm pinned at its pivot. Grabbing it rotates the arm *around
+ * that pivot* (the centre of the pivot disc), clamped to the arc between
+ * ARM_OFF (lifted) and ARM_ON (resting on the record). Release past the midpoint
+ * engages playback; release before it disengages. When idle it gives a gentle
+ * periodic nudge to hint that it can be grabbed.
  */
 function Tonearm({
   isPlaying,
@@ -228,59 +235,112 @@ function Tonearm({
   onEngage?: () => void
   onDisengage?: () => void
 }) {
-  const [dragging, setDragging] = useState(false)
-  const idle = !isPlaying && !dragging
+  const boxRef = useRef<HTMLDivElement>(null)
+  const rotation = useMotionValue(isPlaying ? ARM_ON : ARM_OFF)
+  const animRef = useRef<ReturnType<typeof animate> | null>(null)
+  const interacting = useRef(false)
+  const pivot = useRef({ x: 0, y: 0 })
+  const startAngle = useRef(0)
+  const startRot = useRef(0)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const runAnim = (to: number | number[], opts: any) => {
+    animRef.current?.stop()
+    animRef.current = animate(rotation, to, opts)
+    return animRef.current
+  }
+
+  // Keep the arm in sync with playback when the user isn't holding it.
+  useEffect(() => {
+    if (interacting.current) return
+    runAnim(isPlaying ? ARM_ON : ARM_OFF, SPRING)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying])
+
+  // Idle nudge — a small periodic wiggle while paused to signal interactivity.
+  useEffect(() => {
+    if (isPlaying) return
+    const id = window.setInterval(() => {
+      if (interacting.current) return
+      runAnim([ARM_OFF, ARM_OFF + 6, ARM_OFF], { duration: 0.9, ease: 'easeInOut' })
+    }, 3200)
+    return () => window.clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying])
+
+  // The pivot disc centre sits at ~80% across / ~12% down the arm box.
+  const angleTo = (clientX: number, clientY: number) =>
+    (Math.atan2(clientY - pivot.current.y, clientX - pivot.current.x) * 180) / Math.PI
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    const el = boxRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    pivot.current = { x: rect.left + rect.width * 0.8, y: rect.top + rect.height * 0.12 }
+    animRef.current?.stop()
+    interacting.current = true
+    startAngle.current = angleTo(e.clientX, e.clientY)
+    startRot.current = rotation.get()
+    el.setPointerCapture(e.pointerId)
+  }
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!interacting.current) return
+    const delta = angleTo(e.clientX, e.clientY) - startAngle.current
+    const next = Math.max(ARM_OFF, Math.min(ARM_ON, startRot.current + delta))
+    rotation.set(next)
+  }
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (!interacting.current) return
+    interacting.current = false
+    boxRef.current?.releasePointerCapture?.(e.pointerId)
+    const engaged = rotation.get() >= ARM_MID
+    runAnim(engaged ? ARM_ON : ARM_OFF, SPRING)
+    if (engaged && !isPlaying && canPlay) onEngage?.()
+    else if (!engaged && isPlaying) onDisengage?.()
+  }
 
   return (
-    <motion.div
-      className="absolute -right-2 -top-4 z-20 origin-top-right cursor-grab touch-none drop-shadow active:cursor-grabbing sm:-right-3"
+    <div
+      ref={boxRef}
+      className="absolute -right-2 -top-4 z-20 sm:-right-3"
       style={{ width: '38%' }}
-      drag
-      dragConstraints={{ top: -14, bottom: 42, left: -36, right: 14 }}
-      dragElastic={0.5}
-      dragSnapToOrigin
-      whileDrag={{ scale: 1.04 }}
-      onDragStart={() => setDragging(true)}
-      onDragEnd={(_, info) => {
-        setDragging(false)
-        const { x, y } = info.offset
-        const ontoRecord = y > 24 || x < -24 // dragged down / toward the record
-        const offRecord = y < -24 || x > 24 // lifted up / away from the record
-        if (!isPlaying && ontoRecord && canPlay) onEngage?.()
-        else if (isPlaying && offRecord) onDisengage?.()
-      }}
-      animate={idle ? { rotate: [-6, 1.5, -6] } : { rotate: isPlaying ? 28 : -6 }}
-      transition={
-        idle
-          ? { duration: 0.85, repeat: Infinity, repeatDelay: 2.4, ease: 'easeInOut' }
-          : { type: 'spring', stiffness: 120, damping: 14 }
-      }
     >
-      <svg viewBox="0 0 120 200" className="h-auto w-full">
-        {/* Pivot base */}
-        <circle cx="96" cy="24" r="16" fill="#A23F1C" />
-        <circle cx="96" cy="24" r="7" fill="#F6EAD2" />
-        {/* Arm */}
-        <rect
-          x="90"
-          y="22"
-          width="8"
-          height="150"
-          rx="4"
-          fill="#5A3C22"
-          transform="rotate(18 96 24)"
-        />
-        {/* Headshell */}
-        <rect
-          x="36"
-          y="150"
-          width="26"
-          height="16"
-          rx="5"
-          fill="#34210F"
-          transform="rotate(18 49 158)"
-        />
-      </svg>
-    </motion.div>
+      <motion.div
+        className="cursor-grab touch-none drop-shadow active:cursor-grabbing"
+        style={{ rotate: rotation, transformOrigin: '80% 12%' }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+      >
+        <svg viewBox="0 0 120 200" className="h-auto w-full">
+          {/* Pivot base */}
+          <circle cx="96" cy="24" r="16" fill="#A23F1C" />
+          <circle cx="96" cy="24" r="7" fill="#F6EAD2" />
+          {/* Arm */}
+          <rect
+            x="90"
+            y="22"
+            width="8"
+            height="150"
+            rx="4"
+            fill="#5A3C22"
+            transform="rotate(18 96 24)"
+          />
+          {/* Headshell */}
+          <rect
+            x="36"
+            y="150"
+            width="26"
+            height="16"
+            rx="5"
+            fill="#34210F"
+            transform="rotate(18 49 158)"
+          />
+        </svg>
+      </motion.div>
+    </div>
   )
 }
