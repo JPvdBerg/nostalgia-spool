@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ImageOff,
@@ -116,7 +117,7 @@ export default function PhotoCarousel({
 
       {/* Stage */}
       <div
-        className="group relative flex-1 select-none overflow-hidden rounded-2xl bg-espresso shadow-inner-warm"
+        className="group relative min-h-0 flex-1 select-none overflow-hidden rounded-2xl bg-espresso shadow-inner-warm"
         onMouseEnter={() => setIsPaused(true)}
         onMouseLeave={() => setIsPaused(false)}
       >
@@ -251,10 +252,31 @@ interface LightboxProps {
 function Lightbox({ photos, title, index, axis, onIndexChange, onClose }: LightboxProps) {
   const count = photos.length
   const dialogRef = useRef<HTMLDivElement>(null)
+  const [showHint, setShowHint] = useState(count > 1)
+  const dismissHint = useCallback(() => setShowHint(false), [])
+
+  const handleIndexChange = useCallback(
+    (i: number) => {
+      setShowHint(false)
+      onIndexChange(i)
+    },
+    [onIndexChange],
+  )
+
   const go = useCallback(
-    (dir: number) => onIndexChange(Math.max(0, Math.min(count - 1, index + dir))),
+    (dir: number) => {
+      setShowHint(false)
+      onIndexChange(Math.max(0, Math.min(count - 1, index + dir)))
+    },
     [count, index, onIndexChange],
   )
+
+  // Auto-retire the hint after a few seconds even if untouched.
+  useEffect(() => {
+    if (!showHint) return
+    const id = window.setTimeout(() => setShowHint(false), 4500)
+    return () => window.clearTimeout(id)
+  }, [showHint])
 
   // Lock scroll, manage focus (trap Tab), and wire Esc / arrow keys.
   useEffect(() => {
@@ -331,7 +353,8 @@ function Lightbox({ photos, title, index, axis, onIndexChange, onClose }: Lightb
           count={count}
           index={index}
           axis={axis}
-          onIndexChange={onIndexChange}
+          onIndexChange={handleIndexChange}
+          onInteractStart={dismissHint}
           renderSlide={(i) => (
             <div className="flex h-full items-center justify-center p-4">
               <LightboxImage src={photos[i]} alt={`${title} — photo ${i + 1}`} />
@@ -346,6 +369,33 @@ function Lightbox({ photos, title, index, axis, onIndexChange, onClose }: Lightb
             <LightboxArrow side="right" disabled={index === count - 1} onClick={() => go(1)} />
           </>
         )}
+
+        {/* Swipe affordance — bouncing chevron + label, fades on first move */}
+        <AnimatePresence>
+          {showHint && count > 1 && (
+            <motion.div
+              key="hint"
+              className="pointer-events-none absolute inset-x-0 bottom-6 flex flex-col items-center gap-1 text-cream"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <span className="rounded-full bg-cream/10 px-3 py-1 text-xs font-medium tracking-wide backdrop-blur-sm">
+                Swipe to explore
+              </span>
+              <motion.div
+                animate={axis === 'y' ? { y: [0, 9, 0] } : { x: [0, 9, 0] }}
+                transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+              >
+                {axis === 'y' ? (
+                  <ChevronDown className="h-6 w-6 drop-shadow" />
+                ) : (
+                  <ChevronRight className="h-6 w-6 drop-shadow" />
+                )}
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Dots */}

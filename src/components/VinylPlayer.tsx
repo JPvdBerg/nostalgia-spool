@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { motion, useMotionValue, animate } from 'framer-motion'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { motion, useMotionValue, useSpring, animate } from 'framer-motion'
 import { Pause, Play, Disc3, Music2, Loader2 } from 'lucide-react'
 import type { Track } from '../types'
 
@@ -26,6 +26,9 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+/** Seconds for one full revolution of the record. */
+const SPIN_DURATION = 3.5
+
 export default function VinylPlayer({
   track,
   isPlaying,
@@ -38,17 +41,32 @@ export default function VinylPlayer({
   onEngage,
   onDisengage,
 }: VinylPlayerProps) {
+  // Rotation lives on the parent that holds BOTH the black record and the
+  // centre cover art, so they spin perfectly in sync. Driven by a single
+  // composited transform (GPU) — pausing leaves it exactly where it is.
+  const rotation = useMotionValue(0)
+  useEffect(() => {
+    if (!isPlaying) return
+    const controls = animate(rotation, rotation.get() + 360, {
+      ease: 'linear',
+      duration: SPIN_DURATION,
+      repeat: Infinity,
+      repeatType: 'loop',
+    })
+    return () => controls.stop()
+  }, [isPlaying, rotation])
+
   return (
     <div className="flex w-full flex-col items-center gap-5 sm:gap-6">
-      {/* Turntable plinth */}
-      <div className="relative w-full max-w-[17rem] rounded-[2rem] border border-cocoa/15 bg-gradient-to-br from-sand to-beige-dark p-6 shadow-card sm:max-w-sm sm:p-8 lg:max-w-[17rem] xl:max-w-[19rem]">
+      {/* Turntable plinth — record size capped by viewport height on desktop */}
+      <div className="relative w-full max-w-[17rem] rounded-[2rem] border border-cocoa/15 bg-gradient-to-br from-sand to-beige-dark p-6 shadow-card sm:max-w-sm sm:p-7 lg:max-w-[min(15rem,36vh)] xl:max-w-[min(18rem,40vh)]">
         {/* Soft warm glow that intensifies while playing — pure opacity, cheap */}
         <div
           className="pointer-events-none absolute inset-0 rounded-[2rem] bg-[radial-gradient(circle_at_50%_45%,rgba(194,84,43,0.30),transparent_70%)] blur-xl transition-opacity duration-700"
           style={{ opacity: isPlaying ? 1 : 0 }}
         />
 
-        {/* Tonearm — draggable: drop it on the record to play, lift it off to pause */}
+        {/* Tonearm — pinned at its pivot; drag onto the record to play, off to pause */}
         <Tonearm
           isPlaying={isPlaying}
           canPlay={canPlay}
@@ -56,22 +74,13 @@ export default function VinylPlayer({
           onDisengage={onDisengage}
         />
 
-        {/* The record itself */}
+        {/* The record + cover (one rotating, GPU-composited element) */}
         <div className="relative mx-auto aspect-square w-full">
-          {/* Spindle shadow / platter base */}
           <div className="absolute inset-0 rounded-full bg-espresso/25 blur-md" />
 
-          {/*
-            Rotation is a pure CSS animation on its own compositor layer
-            (transform-gpu + will-change). The browser paints the record once
-            and just spins the cached texture, so it stays smooth even with the
-            gradients/shadows. `animation-play-state: paused` freezes it exactly
-            where it is — no snap back to 0deg. The centre label/cover art lives
-            inside this element, so it spins with the record.
-          */}
-          <div
-            className="transform-gpu will-change-transform relative h-full w-full animate-[spin_3.5s_linear_infinite] rounded-full bg-[radial-gradient(circle_at_center,#3a2a1d_0%,#140c04_55%,#241809_100%)] shadow-soft-lg"
-            style={{ animationPlayState: isPlaying ? 'running' : 'paused' }}
+          <motion.div
+            className="transform-gpu relative h-full w-full rounded-full bg-[radial-gradient(circle_at_center,#3a2a1d_0%,#140c04_55%,#241809_100%)] shadow-soft-lg will-change-transform"
+            style={{ rotate: rotation }}
           >
             {/* Concentric grooves */}
             {[0.92, 0.82, 0.72, 0.62].map((scale) => (
@@ -86,10 +95,10 @@ export default function VinylPlayer({
               />
             ))}
 
-            {/* Subtle sheen so the vinyl reads as glossy while spinning */}
+            {/* Subtle sheen */}
             <span className="pointer-events-none absolute inset-0 rounded-full bg-[conic-gradient(from_0deg,transparent_0deg,rgba(255,255,255,0.12)_35deg,transparent_90deg,transparent_260deg,rgba(255,255,255,0.07)_310deg,transparent_360deg)]" />
 
-            {/* Centre label / cover art */}
+            {/* Centre label / cover art (child → spins with the record) */}
             <div className="absolute left-1/2 top-1/2 aspect-square w-[42%] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-full border-4 border-cream/80 bg-beige-dark shadow-inner-warm">
               {track ? (
                 <CoverArt key={track.id} src={track.coverArt} title={track.title} />
@@ -98,23 +107,18 @@ export default function VinylPlayer({
                   <Music2 className="h-1/3 w-1/3" strokeWidth={1.5} />
                 </div>
               )}
-              {/* Spindle hole */}
               <span className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cream shadow-inner-warm" />
             </div>
-          </div>
+          </motion.div>
 
-          {/*
-            Fixed specular glint — sits OUTSIDE the spinning layer so the light
-            stays put while the record turns beneath it. This sells the spin
-            (grooves/label sweep past a stationary highlight) and adds depth.
-          */}
+          {/* Fixed specular glint (outside the spinning layer → reads as light) */}
           <span className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(circle_at_32%_24%,rgba(255,255,255,0.22),transparent_42%)]" />
           <span className="pointer-events-none absolute inset-0 rounded-full shadow-[inset_0_0_40px_rgba(0,0,0,0.55)]" />
         </div>
       </div>
 
       {/* Now-playing info + transport control */}
-      <div className="flex w-full max-w-sm flex-col items-center gap-5">
+      <div className="flex w-full max-w-sm flex-col items-center gap-4">
         <div className="text-center">
           {track ? (
             <>
@@ -127,13 +131,18 @@ export default function VinylPlayer({
           ) : (
             <p className="flex items-center gap-2 text-cocoa">
               <Disc3 className="h-5 w-5" />
-              Press play to start, or pick a memory
+              Pick a memory to start spinning
             </p>
           )}
         </div>
 
-        <div className="relative flex items-center justify-center">
-          {/* Soft pulsing ring while playing — transform/opacity only (cheap) */}
+        {/* Play button — hidden on mobile until a track is queued */}
+        <div
+          className={[
+            'relative items-center justify-center',
+            track ? 'flex' : 'hidden sm:flex',
+          ].join(' ')}
+        >
           {isPlaying && (
             <motion.span
               className="pointer-events-none absolute h-16 w-16 rounded-full bg-clay/30"
@@ -162,7 +171,7 @@ export default function VinylPlayer({
           </motion.button>
         </div>
 
-        {/* Seek bar — only meaningful once a track is loaded */}
+        {/* Seek bar — only once a track is loaded */}
         {track && onSeek && (
           <div className="w-full px-1">
             <input
@@ -211,19 +220,14 @@ function CoverArt({ src, title }: { src: string; title: string }) {
   )
 }
 
-/** Resting angle when off the record, and engaged angle resting on it. */
+/* ------------------------------------------------------------------ */
+/* Tonearm — rotational drag pinned to its pivot, smoothed with a spring */
+/* ------------------------------------------------------------------ */
+
 const ARM_OFF = -6
 const ARM_ON = 28
 const ARM_MID = (ARM_OFF + ARM_ON) / 2
-const SPRING = { type: 'spring' as const, stiffness: 130, damping: 15 }
 
-/**
- * A draggable tonearm pinned at its pivot. Grabbing it rotates the arm *around
- * that pivot* (the centre of the pivot disc), clamped to the arc between
- * ARM_OFF (lifted) and ARM_ON (resting on the record). Release past the midpoint
- * engages playback; release before it disengages. When idle it gives a gentle
- * periodic nudge to hint that it can be grabbed.
- */
 function Tonearm({
   isPlaying,
   canPlay = true,
@@ -236,79 +240,103 @@ function Tonearm({
   onDisengage?: () => void
 }) {
   const boxRef = useRef<HTMLDivElement>(null)
-  const rotation = useMotionValue(isPlaying ? ARM_ON : ARM_OFF)
-  const animRef = useRef<ReturnType<typeof animate> | null>(null)
+  // `target` is set imperatively; `rotation` is a spring that follows it so the
+  // arm eases to its resting state on release instead of snapping instantly.
+  const target = useMotionValue(isPlaying ? ARM_ON : ARM_OFF)
+  const rotation = useSpring(target, { stiffness: 240, damping: 26, mass: 0.5 })
+
   const interacting = useRef(false)
   const pivot = useRef({ x: 0, y: 0 })
   const startAngle = useRef(0)
   const startRot = useRef(0)
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const runAnim = (to: number | number[], opts: any) => {
-    animRef.current?.stop()
-    animRef.current = animate(rotation, to, opts)
-    return animRef.current
-  }
+  // Pivot = centre of the pivot disc (~80% across, ~12% down the box).
+  // Recomputed on resize/scroll so the angle math never drifts.
+  const computePivot = useCallback(() => {
+    const el = boxRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    pivot.current = { x: r.left + r.width * 0.8, y: r.top + r.height * 0.12 }
+  }, [])
 
-  // Keep the arm in sync with playback when the user isn't holding it.
+  useEffect(() => {
+    computePivot()
+    window.addEventListener('resize', computePivot)
+    window.addEventListener('scroll', computePivot, true)
+    return () => {
+      window.removeEventListener('resize', computePivot)
+      window.removeEventListener('scroll', computePivot, true)
+    }
+  }, [computePivot])
+
+  // Follow playback when the user isn't holding the arm.
   useEffect(() => {
     if (interacting.current) return
-    runAnim(isPlaying ? ARM_ON : ARM_OFF, SPRING)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPlaying])
+    target.set(isPlaying ? ARM_ON : ARM_OFF)
+  }, [isPlaying, target])
 
-  // Idle nudge — a small periodic wiggle while paused to signal interactivity.
+  // Idle nudge — a gentle periodic wiggle while paused to signal interactivity.
   useEffect(() => {
     if (isPlaying) return
     const id = window.setInterval(() => {
       if (interacting.current) return
-      runAnim([ARM_OFF, ARM_OFF + 6, ARM_OFF], { duration: 0.9, ease: 'easeInOut' })
+      target.set(ARM_OFF + 7)
+      window.setTimeout(() => {
+        if (!interacting.current) target.set(ARM_OFF)
+      }, 420)
     }, 3200)
     return () => window.clearInterval(id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPlaying])
+  }, [isPlaying, target])
 
-  // The pivot disc centre sits at ~80% across / ~12% down the arm box.
-  const angleTo = (clientX: number, clientY: number) =>
-    (Math.atan2(clientY - pivot.current.y, clientX - pivot.current.x) * 180) / Math.PI
+  const angleTo = useCallback(
+    (x: number, y: number) =>
+      (Math.atan2(y - pivot.current.y, x - pivot.current.x) * 180) / Math.PI,
+    [],
+  )
 
-  const handlePointerDown = (e: React.PointerEvent) => {
-    const el = boxRef.current
-    if (!el) return
-    const rect = el.getBoundingClientRect()
-    pivot.current = { x: rect.left + rect.width * 0.8, y: rect.top + rect.height * 0.12 }
-    animRef.current?.stop()
-    interacting.current = true
-    startAngle.current = angleTo(e.clientX, e.clientY)
-    startRot.current = rotation.get()
-    el.setPointerCapture(e.pointerId)
-  }
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      e.preventDefault()
+      computePivot()
+      interacting.current = true
+      startAngle.current = angleTo(e.clientX, e.clientY)
+      startRot.current = target.get()
+      boxRef.current?.setPointerCapture(e.pointerId)
+    },
+    [angleTo, computePivot, target],
+  )
 
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (!interacting.current) return
-    const delta = angleTo(e.clientX, e.clientY) - startAngle.current
-    const next = Math.max(ARM_OFF, Math.min(ARM_ON, startRot.current + delta))
-    rotation.set(next)
-  }
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!interacting.current) return
+      const delta = angleTo(e.clientX, e.clientY) - startAngle.current
+      const next = Math.min(ARM_ON, Math.max(ARM_OFF, startRot.current + delta))
+      target.set(next)
+    },
+    [angleTo, target],
+  )
 
-  const handlePointerUp = (e: React.PointerEvent) => {
-    if (!interacting.current) return
-    interacting.current = false
-    boxRef.current?.releasePointerCapture?.(e.pointerId)
-    const engaged = rotation.get() >= ARM_MID
-    runAnim(engaged ? ARM_ON : ARM_OFF, SPRING)
-    if (engaged && !isPlaying && canPlay) onEngage?.()
-    else if (!engaged && isPlaying) onDisengage?.()
-  }
+  const handlePointerUp = useCallback(
+    (e: React.PointerEvent) => {
+      if (!interacting.current) return
+      interacting.current = false
+      boxRef.current?.releasePointerCapture?.(e.pointerId)
+      const engaged = target.get() >= ARM_MID
+      target.set(engaged ? ARM_ON : ARM_OFF)
+      if (engaged && !isPlaying && canPlay) onEngage?.()
+      else if (!engaged && isPlaying) onDisengage?.()
+    },
+    [target, isPlaying, canPlay, onEngage, onDisengage],
+  )
 
   return (
     <div
       ref={boxRef}
-      className="absolute -right-2 -top-4 z-20 sm:-right-3"
+      className="absolute -right-2 -top-4 z-20 select-none sm:-right-3"
       style={{ width: '38%' }}
     >
       <motion.div
-        className="cursor-grab touch-none drop-shadow active:cursor-grabbing"
+        className="transform-gpu cursor-grab touch-none select-none drop-shadow will-change-transform active:cursor-grabbing"
         style={{ rotate: rotation, transformOrigin: '80% 12%' }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -316,10 +344,8 @@ function Tonearm({
         onPointerCancel={handlePointerUp}
       >
         <svg viewBox="0 0 120 200" className="h-auto w-full">
-          {/* Pivot base */}
           <circle cx="96" cy="24" r="16" fill="#A23F1C" />
           <circle cx="96" cy="24" r="7" fill="#F6EAD2" />
-          {/* Arm */}
           <rect
             x="90"
             y="22"
@@ -329,7 +355,6 @@ function Tonearm({
             fill="#5A3C22"
             transform="rotate(18 96 24)"
           />
-          {/* Headshell */}
           <rect
             x="36"
             y="150"

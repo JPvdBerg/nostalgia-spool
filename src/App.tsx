@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Disc3, Pause, Play } from 'lucide-react'
 import VinylPlayer from './components/VinylPlayer'
@@ -85,22 +85,22 @@ export default function App() {
     setBrowsing(false)
   }
 
-  // Adjacent tracks for the prev/next buttons.
-  const currentIndex = currentTrack
-    ? tracks.findIndex((t) => t.id === currentTrack.id)
-    : -1
-  const prevTrack = currentIndex > 0 ? tracks[currentIndex - 1] : undefined
-  const nextTrack =
-    currentIndex >= 0 && currentIndex < tracks.length - 1
-      ? tracks[currentIndex + 1]
-      : undefined
+  // Adjacent tracks for the prev/next buttons (memoized — doesn't recompute
+  // while the record spins, only when the track changes).
+  const { prevTrack, nextTrack } = useMemo(() => {
+    const i = currentTrack ? tracks.findIndex((t) => t.id === currentTrack.id) : -1
+    return {
+      prevTrack: i > 0 ? tracks[i - 1] : undefined,
+      nextTrack: i >= 0 && i < tracks.length - 1 ? tracks[i + 1] : undefined,
+    }
+  }, [currentTrack])
   nextTrackRef.current = nextTrack
 
   // Mini bar shows on mobile when something is loaded but we're browsing.
   const showMiniBar = currentTrack !== null && browsing
 
   return (
-    <div className="relative min-h-[100dvh] overflow-hidden bg-gradient-to-b from-cream via-cream to-beige-dark/70">
+    <div className="relative min-h-[100dvh] overflow-hidden bg-gradient-to-b from-cream via-cream to-beige-dark/70 lg:h-screen">
       {/* Decorative depth — static blurred orbs, painted once, no per-frame cost */}
       <div
         aria-hidden
@@ -117,8 +117,8 @@ export default function App() {
 
       <div
         className={[
-          'relative mx-auto flex min-h-[100dvh] max-w-6xl flex-col px-4 py-5 sm:px-6 sm:py-7 lg:px-8 lg:py-6',
-          showMiniBar ? 'pb-28 lg:pb-6' : '',
+          'relative mx-auto flex min-h-[100dvh] max-w-6xl flex-col px-4 py-5 sm:px-6 sm:py-7 lg:h-screen lg:min-h-0 lg:overflow-hidden lg:px-8 lg:py-5',
+          showMiniBar ? 'pb-28 lg:pb-5' : '',
         ].join(' ')}
       >
         {/* Header */}
@@ -136,8 +136,8 @@ export default function App() {
         </header>
 
         {/* Split layout: vinyl left, content right (stacks on mobile) */}
-        <main className="grid flex-1 grid-cols-1 items-center gap-6 lg:grid-cols-2 lg:gap-10">
-          <section className="flex items-center justify-center">
+        <main className="grid flex-1 grid-cols-1 items-center gap-6 lg:min-h-0 lg:grid-cols-2 lg:auto-rows-fr lg:items-stretch lg:gap-10 lg:overflow-hidden">
+          <section className="flex items-center justify-center lg:min-h-0">
             <VinylPlayer
               track={currentTrack}
               isPlaying={isPlaying}
@@ -152,7 +152,7 @@ export default function App() {
             />
           </section>
 
-          <section className="min-h-[24rem] lg:min-h-0">
+          <section className="min-h-[22rem] lg:min-h-0 lg:overflow-hidden">
             {hasTracks ? (
               <AnimatePresence mode="wait" initial={false}>
                 {showCarousel && currentTrack ? (
