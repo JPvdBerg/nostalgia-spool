@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   ChevronLeft,
@@ -13,17 +13,14 @@ import {
 } from 'lucide-react'
 import type { Track } from '../types'
 import Swiper from './Swiper'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 
 interface PhotoCarouselProps {
   track: Track
   onBackToPlaylist: () => void
-  /** Go to the previous track. Omitted when this is the first track. */
   onPrevTrack?: () => void
-  /** Title of the previous track, shown on the button. */
   prevTrackTitle?: string
-  /** Advance to the next track. Omitted when this is the last track. */
   onNextTrack?: () => void
-  /** Title of the next track, shown on the button. */
   nextTrackTitle?: string
 }
 
@@ -45,7 +42,10 @@ export default function PhotoCarousel({
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const photoCount = track.photos.length
 
-  // Reset whenever the track changes.
+  // On phones, photos are swiped vertically; on larger screens, horizontally.
+  const isMobile = useMediaQuery('(max-width: 640px)')
+  const axis = isMobile ? 'y' : 'x'
+
   useEffect(() => {
     setIndex(0)
     setLightboxOpen(false)
@@ -59,43 +59,53 @@ export default function PhotoCarousel({
     [photoCount],
   )
 
-  // Auto-advance while a memory plays; stops at the last photo (no jarring
-  // rewind), and pauses while the user interacts or the lightbox is open.
+  // Auto-advance while a memory plays — loops back to the first photo, and
+  // pauses while the user interacts or the lightbox is open.
   useEffect(() => {
     if (photoCount <= 1 || isPaused || lightboxOpen) return
     const timer = window.setInterval(() => {
-      setIndex((prev) => (prev + 1 >= photoCount ? prev : prev + 1))
+      setIndex((prev) => (prev + 1) % photoCount)
     }, AUTOPLAY_INTERVAL)
     return () => window.clearInterval(timer)
   }, [photoCount, index, isPaused, lightboxOpen])
+
+  // Preload the neighbouring photos so a swipe never reveals a blank frame.
+  useEffect(() => {
+    const preload = (i: number) => {
+      if (i >= 0 && i < photoCount) {
+        const img = new Image()
+        img.src = track.photos[i]
+      }
+    }
+    preload(index + 1)
+    preload(index - 1)
+  }, [index, photoCount, track.photos])
 
   // Arrow-key navigation for the inline carousel (desktop).
   useEffect(() => {
     if (photoCount <= 1 || lightboxOpen) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft') goTo(index - 1)
-      if (e.key === 'ArrowRight') goTo(index + 1)
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') goTo(index - 1)
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') goTo(index + 1)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [index, photoCount, goTo, lightboxOpen])
 
   return (
-    <div className="flex h-full flex-col rounded-3xl bg-gradient-to-b from-sand to-beige-dark/60 p-5 shadow-soft sm:p-7">
+    <div className="flex h-full flex-col rounded-3xl border border-cocoa/15 bg-gradient-to-b from-sand to-beige-dark/70 p-5 shadow-card sm:p-7">
       <header className="mb-4 flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs uppercase tracking-[0.25em] text-brown-med">
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-clay">
             Now Playing · {track.era}
           </p>
-          <h2 className="truncate text-xl font-semibold text-brown-dark">
-            {track.title}
-          </h2>
+          <h2 className="truncate text-xl font-semibold text-espresso">{track.title}</h2>
         </div>
         <motion.button
           type="button"
           onClick={onBackToPlaylist}
           whileTap={{ scale: 0.95 }}
-          className="flex shrink-0 touch-manipulation items-center gap-2 rounded-full bg-brown-dark px-3.5 py-2 text-sm font-semibold text-cream shadow-soft transition-colors hover:bg-brown-med"
+          className="flex shrink-0 touch-manipulation items-center gap-2 rounded-full bg-espresso px-3.5 py-2 text-sm font-semibold text-cream shadow-soft transition-colors hover:bg-cocoa"
         >
           <ListMusic className="h-4 w-4" />
           <span className="hidden sm:inline">Back to Playlist</span>
@@ -105,12 +115,12 @@ export default function PhotoCarousel({
 
       {/* Stage */}
       <div
-        className="group relative flex-1 select-none overflow-hidden rounded-2xl bg-beige-dark shadow-inner-warm"
+        className="group relative flex-1 select-none overflow-hidden rounded-2xl bg-espresso shadow-inner-warm"
         onMouseEnter={() => setIsPaused(true)}
         onMouseLeave={() => setIsPaused(false)}
       >
         {photoCount === 0 ? (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-brown-dark/70">
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-cream/70">
             <Images className="h-10 w-10" strokeWidth={1.5} />
             <p className="px-6 text-center text-sm">
               No photos for this memory yet — add some to{' '}
@@ -121,32 +131,29 @@ export default function PhotoCarousel({
           <Swiper
             count={photoCount}
             index={index}
+            axis={axis}
             onIndexChange={setIndex}
             onTap={() => setLightboxOpen(true)}
             onInteractStart={() => setIsPaused(true)}
             onInteractEnd={() => setIsPaused(false)}
             renderSlide={(i) => (
-              <Photo
-                src={track.photos[i]}
-                alt={`${track.title} — photo ${i + 1}`}
-                cover
-              />
+              <Photo src={track.photos[i]} alt={`${track.title} — photo ${i + 1}`} cover />
             )}
           />
         )}
 
         {/* Warm vignette so any photo feels cosy */}
-        <span className="pointer-events-none absolute inset-0 rounded-2xl shadow-[inset_0_0_80px_rgba(58,42,29,0.35)]" />
+        <span className="pointer-events-none absolute inset-0 rounded-2xl shadow-[inset_0_0_80px_rgba(20,12,4,0.45)]" />
 
-        {/* Tap-to-expand affordance */}
+        {/* Expand affordance */}
         {photoCount > 0 && (
-          <span className="pointer-events-none absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-brown-dark/55 px-2.5 py-1 text-xs font-medium text-cream transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
+          <span className="pointer-events-none absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-espresso/70 px-2.5 py-1 text-xs font-medium text-cream transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
             <Maximize2 className="h-3.5 w-3.5" />
             Tap to expand
           </span>
         )}
 
-        {/* Prev / next controls (desktop convenience) */}
+        {/* Desktop prev/next (vertical swipe handles mobile) */}
         {photoCount > 1 && (
           <>
             <CarouselArrow side="left" disabled={index === 0} onClick={() => goTo(index - 1)} />
@@ -170,7 +177,7 @@ export default function PhotoCarousel({
               onClick={() => setIndex(i)}
               className={[
                 'h-2.5 rounded-full transition-all duration-300',
-                i === index ? 'w-7 bg-brown-dark' : 'w-2.5 bg-brown-med/50 hover:bg-brown-med',
+                i === index ? 'w-7 bg-clay' : 'w-2.5 bg-cocoa/30 hover:bg-cocoa/60',
               ].join(' ')}
             />
           ))}
@@ -185,7 +192,7 @@ export default function PhotoCarousel({
               type="button"
               onClick={onPrevTrack}
               whileTap={{ scale: 0.97 }}
-              className="flex min-w-0 flex-1 touch-manipulation items-center justify-center gap-2 rounded-2xl bg-brown-dark/10 px-4 py-3 text-sm font-semibold text-brown-dark transition-colors hover:bg-brown-dark hover:text-cream"
+              className="flex min-w-0 flex-1 touch-manipulation items-center justify-center gap-2 rounded-2xl border border-cocoa/15 bg-cream/60 px-4 py-3 text-sm font-semibold text-espresso transition-colors hover:bg-clay hover:text-cream"
             >
               <SkipBack className="h-4 w-4 shrink-0" />
               <span className="truncate">
@@ -199,7 +206,7 @@ export default function PhotoCarousel({
               type="button"
               onClick={onNextTrack}
               whileTap={{ scale: 0.97 }}
-              className="flex min-w-0 flex-1 touch-manipulation items-center justify-center gap-2 rounded-2xl bg-brown-dark/10 px-4 py-3 text-sm font-semibold text-brown-dark transition-colors hover:bg-brown-dark hover:text-cream"
+              className="flex min-w-0 flex-1 touch-manipulation items-center justify-center gap-2 rounded-2xl border border-cocoa/15 bg-cream/60 px-4 py-3 text-sm font-semibold text-espresso transition-colors hover:bg-clay hover:text-cream"
             >
               <span className="truncate">
                 <span className="opacity-60">Next</span>
@@ -217,6 +224,7 @@ export default function PhotoCarousel({
             photos={track.photos}
             title={track.title}
             index={index}
+            axis={axis}
             onIndexChange={setIndex}
             onClose={() => setLightboxOpen(false)}
           />
@@ -234,35 +242,64 @@ interface LightboxProps {
   photos: string[]
   title: string
   index: number
+  axis: 'x' | 'y'
   onIndexChange: (i: number) => void
   onClose: () => void
 }
 
-function Lightbox({ photos, title, index, onIndexChange, onClose }: LightboxProps) {
+function Lightbox({ photos, title, index, axis, onIndexChange, onClose }: LightboxProps) {
   const count = photos.length
+  const dialogRef = useRef<HTMLDivElement>(null)
   const go = useCallback(
     (dir: number) => onIndexChange(Math.max(0, Math.min(count - 1, index + dir))),
     [count, index, onIndexChange],
   )
 
-  // Lock body scroll + wire up Esc / arrow keys while open.
+  // Lock scroll, manage focus (trap Tab), and wire Esc / arrow keys.
   useEffect(() => {
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    const prevFocus = document.activeElement as HTMLElement | null
+
+    const getFocusable = () =>
+      Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      )
+    getFocusable()[0]?.focus()
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-      if (e.key === 'ArrowLeft') go(-1)
-      if (e.key === 'ArrowRight') go(1)
+      if (e.key === 'Escape') return onClose()
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') return go(-1)
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') return go(1)
+      if (e.key === 'Tab') {
+        const items = getFocusable()
+        if (items.length === 0) return
+        const i = items.indexOf(document.activeElement as HTMLElement)
+        if (e.shiftKey && i <= 0) {
+          e.preventDefault()
+          items[items.length - 1].focus()
+        } else if (!e.shiftKey && i === items.length - 1) {
+          e.preventDefault()
+          items[0].focus()
+        }
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => {
       document.body.style.overflow = prevOverflow
       window.removeEventListener('keydown', onKey)
+      prevFocus?.focus?.()
     }
   }, [onClose, go])
 
   return (
     <motion.div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${title} photos`}
       className="fixed inset-0 z-50 flex flex-col bg-[#160f08]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -292,6 +329,7 @@ function Lightbox({ photos, title, index, onIndexChange, onClose }: LightboxProp
         <Swiper
           count={count}
           index={index}
+          axis={axis}
           onIndexChange={onIndexChange}
           renderSlide={(i) => (
             <div className="flex h-full items-center justify-center p-4">
@@ -300,7 +338,7 @@ function Lightbox({ photos, title, index, onIndexChange, onClose }: LightboxProp
           )}
         />
 
-        {/* Desktop arrows */}
+        {/* Desktop arrows (mobile uses vertical swipe) */}
         {count > 1 && (
           <>
             <LightboxArrow side="left" disabled={index === 0} onClick={() => go(-1)} />
@@ -320,7 +358,7 @@ function Lightbox({ photos, title, index, onIndexChange, onClose }: LightboxProp
               onClick={() => onIndexChange(i)}
               className={[
                 'h-2.5 rounded-full transition-all duration-300',
-                i === index ? 'w-7 bg-cream' : 'w-2.5 bg-cream/40 hover:bg-cream/70',
+                i === index ? 'w-7 bg-clay' : 'w-2.5 bg-cream/40 hover:bg-cream/70',
               ].join(' ')}
             />
           ))}
@@ -330,10 +368,22 @@ function Lightbox({ photos, title, index, onIndexChange, onClose }: LightboxProp
   )
 }
 
-function LightboxImage({ src, alt }: { src: string; alt: string }) {
-  const [errored, setErrored] = useState(false)
+/* ------------------------------------------------------------------ */
+/* Image helpers                                                       */
+/* ------------------------------------------------------------------ */
 
-  if (errored) {
+function Shimmer() {
+  return (
+    <div className="absolute inset-0 overflow-hidden bg-cocoa/40">
+      <div className="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-cream/15 to-transparent" />
+    </div>
+  )
+}
+
+function LightboxImage({ src, alt }: { src: string; alt: string }) {
+  const [state, setState] = useState<'loading' | 'ok' | 'error'>('loading')
+
+  if (state === 'error') {
     return (
       <div className="flex flex-col items-center justify-center gap-2 text-cream/70">
         <ImageOff className="h-10 w-10" strokeWidth={1.5} />
@@ -343,22 +393,27 @@ function LightboxImage({ src, alt }: { src: string; alt: string }) {
   }
 
   return (
-    <img
-      src={src}
-      alt={alt}
-      draggable={false}
-      onError={() => setErrored(true)}
-      className="pointer-events-none max-h-full max-w-full select-none rounded-xl object-contain shadow-2xl"
-    />
+    <div className="relative flex h-full w-full items-center justify-center">
+      {state === 'loading' && <Shimmer />}
+      <img
+        src={src}
+        alt={alt}
+        draggable={false}
+        decoding="async"
+        onLoad={() => setState('ok')}
+        onError={() => setState('error')}
+        className="pointer-events-none relative max-h-full max-w-full select-none rounded-xl object-contain shadow-2xl"
+      />
+    </div>
   )
 }
 
 function Photo({ src, alt, cover }: { src: string; alt: string; cover?: boolean }) {
-  const [errored, setErrored] = useState(false)
+  const [state, setState] = useState<'loading' | 'ok' | 'error'>('loading')
 
-  if (errored) {
+  if (state === 'error') {
     return (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-beige-dark text-brown-dark/70">
+      <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-cocoa/40 text-cream/70">
         <ImageOff className="h-10 w-10" strokeWidth={1.5} />
         <p className="px-6 text-center text-sm">
           Drop a photo at <code className="font-mono">{src}</code>
@@ -368,16 +423,21 @@ function Photo({ src, alt, cover }: { src: string; alt: string; cover?: boolean 
   }
 
   return (
-    <img
-      src={src}
-      alt={alt}
-      draggable={false}
-      onError={() => setErrored(true)}
-      className={[
-        'pointer-events-none h-full w-full select-none',
-        cover ? 'object-cover' : 'object-contain',
-      ].join(' ')}
-    />
+    <div className="relative h-full w-full">
+      {state === 'loading' && <Shimmer />}
+      <img
+        src={src}
+        alt={alt}
+        draggable={false}
+        decoding="async"
+        onLoad={() => setState('ok')}
+        onError={() => setState('error')}
+        className={[
+          'pointer-events-none relative h-full w-full select-none',
+          cover ? 'object-cover' : 'object-contain',
+        ].join(' ')}
+      />
+    </div>
   )
 }
 
@@ -398,7 +458,7 @@ function CarouselArrow({
       disabled={disabled}
       aria-label={side === 'left' ? 'Previous photo' : 'Next photo'}
       className={[
-        'absolute top-1/2 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-cream/90 text-brown-dark shadow-soft transition-all hover:bg-cream disabled:pointer-events-none disabled:opacity-0 sm:flex',
+        'absolute top-1/2 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-cream/90 text-espresso shadow-soft transition-all hover:bg-cream disabled:pointer-events-none disabled:opacity-0 sm:flex',
         side === 'left' ? 'left-3' : 'right-3',
       ].join(' ')}
     >

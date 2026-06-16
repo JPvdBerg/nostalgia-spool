@@ -22,14 +22,14 @@ const item = {
 
 export default function TrackList({ tracks, activeTrackId, onSelect }: TrackListProps) {
   return (
-    <div className="flex h-full flex-col rounded-3xl bg-sand p-5 shadow-soft sm:p-7">
+    <div className="flex h-full flex-col rounded-3xl border border-cocoa/15 bg-sand p-5 shadow-card sm:p-7">
       <header className="mb-4 flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-brown-dark text-cream">
+        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-clay text-cream shadow-soft">
           <Disc3 className="h-5 w-5" />
         </span>
         <div>
-          <h2 className="text-xl font-semibold text-brown-dark">The Tracklist</h2>
-          <p className="text-sm text-brown-med">Tap a memory to drop the needle</p>
+          <h2 className="text-xl font-semibold text-espresso">The Tracklist</h2>
+          <p className="text-sm text-cocoa">Tap a memory to drop the needle</p>
         </div>
       </header>
 
@@ -52,16 +52,16 @@ export default function TrackList({ tracks, activeTrackId, onSelect }: TrackList
                 className={[
                   'group flex w-full touch-manipulation items-center gap-4 rounded-2xl px-4 py-3 text-left transition-colors',
                   isActive
-                    ? 'bg-brown-dark text-cream shadow-soft'
-                    : 'bg-cream/70 text-brown-dark hover:bg-beige-dark active:bg-beige-dark',
+                    ? 'bg-clay text-cream shadow-soft'
+                    : 'border border-cocoa/10 bg-cream/80 text-espresso hover:bg-beige-dark active:bg-beige-dark',
                 ].join(' ')}
               >
                 <span
                   className={[
                     'flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold',
                     isActive
-                      ? 'bg-cream text-brown-dark'
-                      : 'bg-beige-dark text-brown-dark group-hover:bg-cream',
+                      ? 'bg-cream text-clay'
+                      : 'bg-beige-dark text-cocoa group-hover:bg-cream',
                   ].join(' ')}
                 >
                   {isActive ? (
@@ -76,7 +76,7 @@ export default function TrackList({ tracks, activeTrackId, onSelect }: TrackList
                   <span
                     className={[
                       'block truncate text-sm',
-                      isActive ? 'text-cream/80' : 'text-brown-med',
+                      isActive ? 'text-cream/85' : 'text-cocoa/80',
                     ].join(' ')}
                   >
                     {track.artist} · {track.era}
@@ -109,7 +109,7 @@ function EqualizerBars() {
           // Animate scaleY (a composited transform) instead of height to avoid
           // per-frame layout/reflow — keeps the list buttery while playing.
           key={i}
-          className="h-full w-[3px] origin-bottom rounded-full bg-brown-dark"
+          className="h-full w-[3px] origin-bottom rounded-full bg-clay"
           animate={{ scaleY: [0.3, 1, 0.45] }}
           transition={{
             duration: 0.8,

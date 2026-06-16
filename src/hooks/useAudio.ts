@@ -15,8 +15,16 @@ export interface UseAudio {
   status: AudioStatus
   /** A human-friendly error message, or null when healthy. */
   error: string | null
+  /** Current playback position in seconds. */
+  currentTime: number
+  /** Track duration in seconds (0 until metadata loads). */
+  duration: number
+  /** Jump to a position (seconds). */
+  seek: (time: number) => void
   /** Load a track and start it from the beginning, cleanly stopping any previous track. */
   selectTrack: (track: Track) => void
+  /** Load a track into the player *without* playing (e.g. restoring last session). */
+  loadTrack: (track: Track) => void
   /** Resume the currently loaded track. */
   play: () => void
   /** Pause the currently loaded track (keeps it loaded). */
@@ -53,15 +61,20 @@ function describeMediaError(audio: HTMLAudioElement, track: Track | null): strin
  * overlapping playback: we `pause()` + reset the element, swap `src`, call
  * `load()` to drop the previous track's buffered data, then `play()`.
  */
-export function useAudio(): UseAudio {
+export function useAudio(options: { onEnded?: () => void } = {}): UseAudio {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   // Keep a ref to the loaded track so event listeners can build good messages.
   const trackRef = useRef<Track | null>(null)
+  // Latest onEnded callback, so the once-mounted listener never goes stale.
+  const onEndedRef = useRef(options.onEnded)
+  onEndedRef.current = options.onEnded
 
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
 
   // Create the audio element once and wire up lifecycle listeners.
   useEffect(() => {
@@ -77,6 +90,7 @@ export function useAudio(): UseAudio {
     const handleEnded = () => {
       setIsPlaying(false)
       setIsLoading(false)
+      onEndedRef.current?.()
     }
     const handleWaiting = () => setIsLoading(true)
     const handlePlaying = () => {
@@ -84,6 +98,9 @@ export function useAudio(): UseAudio {
       setIsLoading(false)
     }
     const handleCanPlay = () => setIsLoading(false)
+    const handleTimeUpdate = () => setCurrentTime(audio.currentTime)
+    const handleDuration = () =>
+      setDuration(Number.isFinite(audio.duration) ? audio.duration : 0)
     const handleError = () => {
       setIsPlaying(false)
       setIsLoading(false)
@@ -96,6 +113,9 @@ export function useAudio(): UseAudio {
     audio.addEventListener('ended', handleEnded)
     audio.addEventListener('waiting', handleWaiting)
     audio.addEventListener('canplay', handleCanPlay)
+    audio.addEventListener('timeupdate', handleTimeUpdate)
+    audio.addEventListener('loadedmetadata', handleDuration)
+    audio.addEventListener('durationchange', handleDuration)
     audio.addEventListener('error', handleError)
 
     return () => {
@@ -107,11 +127,21 @@ export function useAudio(): UseAudio {
       audio.removeEventListener('ended', handleEnded)
       audio.removeEventListener('waiting', handleWaiting)
       audio.removeEventListener('canplay', handleCanPlay)
+      audio.removeEventListener('timeupdate', handleTimeUpdate)
+      audio.removeEventListener('loadedmetadata', handleDuration)
+      audio.removeEventListener('durationchange', handleDuration)
       audio.removeEventListener('error', handleError)
       audio.removeAttribute('src')
       audio.load()
       audioRef.current = null
     }
+  }, [])
+
+  const seek = useCallback((time: number) => {
+    const audio = audioRef.current
+    if (!audio) return
+    audio.currentTime = time
+    setCurrentTime(time)
   }, [])
 
   /** Shared play() that translates rejected promises into useful errors. */
@@ -172,6 +202,8 @@ export function useAudio(): UseAudio {
       }
       trackRef.current = track
       setCurrentTrack(track)
+      setCurrentTime(0)
+      setDuration(0)
 
       try {
         audio.currentTime = 0
@@ -182,6 +214,19 @@ export function useAudio(): UseAudio {
     },
     [attemptPlay],
   )
+
+  const loadTrack = useCallback((track: Track) => {
+    const audio = audioRef.current
+    if (!audio) return
+    if (trackRef.current?.id !== track.id) {
+      audio.src = track.audioSrc
+      audio.load()
+    }
+    trackRef.current = track
+    setCurrentTrack(track)
+    setCurrentTime(0)
+    setDuration(0)
+  }, [])
 
   const stop = useCallback(() => {
     const audio = audioRef.current
@@ -195,6 +240,8 @@ export function useAudio(): UseAudio {
     setIsPlaying(false)
     setIsLoading(false)
     setError(null)
+    setCurrentTime(0)
+    setDuration(0)
   }, [])
 
   const clearError = useCallback(() => setError(null), [])
@@ -215,7 +262,11 @@ export function useAudio(): UseAudio {
     isLoading,
     status,
     error,
+    currentTime,
+    duration,
+    seek,
     selectTrack,
+    loadTrack,
     play,
     pause,
     toggle,

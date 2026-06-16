@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Pause, Play, Disc3, Music2, Loader2 } from 'lucide-react'
 import type { Track } from '../types'
@@ -8,7 +9,17 @@ interface VinylPlayerProps {
   isLoading?: boolean
   /** Whether playback can be started at all (there is at least one track). */
   canPlay?: boolean
+  currentTime?: number
+  duration?: number
+  onSeek?: (time: number) => void
   onToggle: () => void
+}
+
+function formatTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00'
+  const m = Math.floor(seconds / 60)
+  const s = Math.floor(seconds % 60)
+  return `${m}:${s.toString().padStart(2, '0')}`
 }
 
 export default function VinylPlayer({
@@ -16,15 +27,18 @@ export default function VinylPlayer({
   isPlaying,
   isLoading = false,
   canPlay = true,
+  currentTime = 0,
+  duration = 0,
+  onSeek,
   onToggle,
 }: VinylPlayerProps) {
   return (
     <div className="flex w-full flex-col items-center gap-8">
       {/* Turntable plinth */}
-      <div className="relative w-full max-w-sm rounded-[2rem] bg-gradient-to-br from-sand to-beige-dark/70 p-6 shadow-soft-lg sm:p-8">
+      <div className="relative w-full max-w-sm rounded-[2rem] border border-cocoa/15 bg-gradient-to-br from-sand to-beige-dark p-6 shadow-card sm:p-8">
         {/* Soft warm glow that intensifies while playing — pure opacity, cheap */}
         <div
-          className="pointer-events-none absolute inset-0 rounded-[2rem] bg-[radial-gradient(circle_at_50%_45%,rgba(168,121,84,0.35),transparent_70%)] blur-xl transition-opacity duration-700"
+          className="pointer-events-none absolute inset-0 rounded-[2rem] bg-[radial-gradient(circle_at_50%_45%,rgba(194,84,43,0.30),transparent_70%)] blur-xl transition-opacity duration-700"
           style={{ opacity: isPlaying ? 1 : 0 }}
         />
 
@@ -34,17 +48,18 @@ export default function VinylPlayer({
         {/* The record itself */}
         <div className="relative mx-auto aspect-square w-full">
           {/* Spindle shadow / platter base */}
-          <div className="absolute inset-0 rounded-full bg-brown-med/20 blur-md" />
+          <div className="absolute inset-0 rounded-full bg-espresso/25 blur-md" />
 
           {/*
             Rotation is a pure CSS animation on its own compositor layer
             (transform-gpu + will-change). The browser paints the record once
             and just spins the cached texture, so it stays smooth even with the
             gradients/shadows. `animation-play-state: paused` freezes it exactly
-            where it is — no snap back to 0deg.
+            where it is — no snap back to 0deg. The centre label/cover art lives
+            inside this element, so it spins with the record.
           */}
           <div
-            className="transform-gpu will-change-transform relative h-full w-full animate-[spin_3.5s_linear_infinite] rounded-full bg-[radial-gradient(circle_at_center,#3a2a1d_0%,#1c130c_55%,#2a1d12_100%)] shadow-soft-lg"
+            className="transform-gpu will-change-transform relative h-full w-full animate-[spin_3.5s_linear_infinite] rounded-full bg-[radial-gradient(circle_at_center,#3a2a1d_0%,#140c04_55%,#241809_100%)] shadow-soft-lg"
             style={{ animationPlayState: isPlaying ? 'running' : 'paused' }}
           >
             {/* Concentric grooves */}
@@ -66,18 +81,9 @@ export default function VinylPlayer({
             {/* Centre label / cover art */}
             <div className="absolute left-1/2 top-1/2 aspect-square w-[42%] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-full border-4 border-cream/80 bg-beige-dark shadow-inner-warm">
               {track ? (
-                <img
-                  src={track.coverArt}
-                  alt={`${track.title} cover art`}
-                  className="h-full w-full object-cover"
-                  draggable={false}
-                  onError={(e) => {
-                    // Graceful fallback until real cover art is dropped in.
-                    e.currentTarget.style.display = 'none'
-                  }}
-                />
+                <CoverArt key={track.id} src={track.coverArt} title={track.title} />
               ) : (
-                <div className="flex h-full w-full items-center justify-center text-brown-dark/70">
+                <div className="flex h-full w-full items-center justify-center text-cocoa/70">
                   <Music2 className="h-1/3 w-1/3" strokeWidth={1.5} />
                 </div>
               )}
@@ -88,9 +94,8 @@ export default function VinylPlayer({
 
           {/*
             Fixed specular glint — sits OUTSIDE the spinning layer so the light
-            stays put while the record turns beneath it. This is what sells the
-            spin (the grooves/label move past a stationary highlight) and adds
-            the 3D depth that was missing.
+            stays put while the record turns beneath it. This sells the spin
+            (grooves/label sweep past a stationary highlight) and adds depth.
           */}
           <span className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(circle_at_32%_24%,rgba(255,255,255,0.22),transparent_42%)]" />
           <span className="pointer-events-none absolute inset-0 rounded-full shadow-[inset_0_0_40px_rgba(0,0,0,0.55)]" />
@@ -102,16 +107,14 @@ export default function VinylPlayer({
         <div className="text-center">
           {track ? (
             <>
-              <p className="text-xs uppercase tracking-[0.25em] text-brown-med">
+              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-clay">
                 {isLoading ? 'Loading…' : `Side A · ${track.era}`}
               </p>
-              <h2 className="mt-1 text-2xl font-semibold text-brown-dark">
-                {track.title}
-              </h2>
-              <p className="text-sm text-brown-med">{track.artist}</p>
+              <h2 className="mt-1 text-2xl font-semibold text-espresso">{track.title}</h2>
+              <p className="text-sm text-cocoa">{track.artist}</p>
             </>
           ) : (
-            <p className="flex items-center gap-2 text-brown-med">
+            <p className="flex items-center gap-2 text-cocoa">
               <Disc3 className="h-5 w-5" />
               Press play to start, or pick a memory
             </p>
@@ -122,7 +125,7 @@ export default function VinylPlayer({
           {/* Soft pulsing ring while playing — transform/opacity only (cheap) */}
           {isPlaying && (
             <motion.span
-              className="pointer-events-none absolute h-16 w-16 rounded-full bg-brown-dark/30"
+              className="pointer-events-none absolute h-16 w-16 rounded-full bg-clay/30"
               initial={{ scale: 1, opacity: 0.6 }}
               animate={{ scale: 1.8, opacity: 0 }}
               transition={{ duration: 1.8, repeat: Infinity, ease: 'easeOut' }}
@@ -136,7 +139,7 @@ export default function VinylPlayer({
             whileHover={{ scale: (track || canPlay) && !isLoading ? 1.05 : 1 }}
             aria-label={isLoading ? 'Loading' : isPlaying ? 'Pause' : 'Play'}
             aria-busy={isLoading}
-            className="relative flex h-16 w-16 touch-manipulation select-none items-center justify-center rounded-full bg-brown-dark text-cream shadow-soft transition-colors hover:bg-brown-med disabled:cursor-not-allowed disabled:bg-beige-dark disabled:text-cream/70"
+            className="relative flex h-16 w-16 touch-manipulation select-none items-center justify-center rounded-full bg-clay text-cream shadow-soft transition-colors hover:bg-clay-dark disabled:cursor-not-allowed disabled:bg-beige-dark disabled:text-cream/70"
           >
             {isLoading ? (
               <Loader2 className="h-7 w-7 animate-spin" />
@@ -147,8 +150,53 @@ export default function VinylPlayer({
             )}
           </motion.button>
         </div>
+
+        {/* Seek bar — only meaningful once a track is loaded */}
+        {track && onSeek && (
+          <div className="w-full px-1">
+            <input
+              type="range"
+              min={0}
+              max={duration || 0}
+              step={0.1}
+              value={Math.min(currentTime, duration || 0)}
+              onChange={(e) => onSeek(Number(e.target.value))}
+              disabled={!duration}
+              aria-label="Seek"
+              className="h-1.5 w-full cursor-pointer touch-manipulation appearance-none rounded-full bg-cocoa/25 accent-clay"
+            />
+            <div className="mt-1.5 flex justify-between text-xs tabular-nums text-cocoa">
+              <span>{formatTime(currentTime)}</span>
+              <span>{formatTime(duration)}</span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
+  )
+}
+
+/** Centre cover art with a per-instance error fallback (resets per track). */
+function CoverArt({ src, title }: { src: string; title: string }) {
+  const [errored, setErrored] = useState(false)
+
+  if (errored) {
+    return (
+      <div className="flex h-full w-full items-center justify-center text-cocoa/70">
+        <Music2 className="h-1/3 w-1/3" strokeWidth={1.5} />
+      </div>
+    )
+  }
+
+  return (
+    <img
+      src={src}
+      alt={`${title} cover art`}
+      className="h-full w-full object-cover"
+      draggable={false}
+      decoding="async"
+      onError={() => setErrored(true)}
+    />
   )
 }
 
@@ -164,7 +212,7 @@ function Tonearm({ isPlaying }: { isPlaying: boolean }) {
     >
       <svg viewBox="0 0 120 200" className="h-auto w-full drop-shadow">
         {/* Pivot base */}
-        <circle cx="96" cy="24" r="16" fill="#A87954" />
+        <circle cx="96" cy="24" r="16" fill="#A23F1C" />
         <circle cx="96" cy="24" r="7" fill="#F6EAD2" />
         {/* Arm */}
         <rect
@@ -173,7 +221,7 @@ function Tonearm({ isPlaying }: { isPlaying: boolean }) {
           width="8"
           height="150"
           rx="4"
-          fill="#C2956E"
+          fill="#5A3C22"
           transform="rotate(18 96 24)"
         />
         {/* Headshell */}
@@ -183,7 +231,7 @@ function Tonearm({ isPlaying }: { isPlaying: boolean }) {
           width="26"
           height="16"
           rx="5"
-          fill="#A87954"
+          fill="#34210F"
           transform="rotate(18 49 158)"
         />
       </svg>

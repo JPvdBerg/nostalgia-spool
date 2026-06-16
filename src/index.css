@@ -14,7 +14,7 @@ html {
 }
 
 body {
-  @apply bg-cream font-serif text-brown-dark antialiased;
+  @apply bg-cream font-serif text-espresso antialiased;
   /* Remove the grey flash when tapping interactive elements on mobile. */
   -webkit-tap-highlight-color: transparent;
   text-rendering: optimizeLegibility;
