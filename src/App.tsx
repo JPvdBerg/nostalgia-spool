@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Disc3, Pause, Play } from 'lucide-react'
 import VinylPlayer from './components/VinylPlayer'
@@ -8,8 +8,6 @@ import Toast from './components/Toast'
 import { useAudio, type UseAudio } from './hooks/useAudio'
 import { tracks } from './data'
 import type { Track } from './types'
-
-const LAST_TRACK_KEY = 'nostalgia-spool:last-track'
 
 const panelMotion = {
   initial: { opacity: 0, y: 12 },
@@ -43,30 +41,14 @@ export default function App() {
     duration,
     seek,
     selectTrack,
-    loadTrack,
+    play,
+    pause,
     toggle,
     clearError,
   } = audio
 
   // `browsing` shows the playlist while audio keeps playing (decoupled from stop).
   const [browsing, setBrowsing] = useState(false)
-
-  // Restore the last-played track on load (cued up, paused — autoplay needs a tap).
-  useEffect(() => {
-    if (!hasTracks) return
-    const lastId = localStorage.getItem(LAST_TRACK_KEY)
-    const last = lastId ? tracks.find((t) => t.id === lastId) : undefined
-    if (last) {
-      loadTrack(last)
-      setBrowsing(true)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Persist whatever is loaded.
-  useEffect(() => {
-    if (currentTrack) localStorage.setItem(LAST_TRACK_KEY, currentTrack.id)
-  }, [currentTrack])
 
   const showCarousel = currentTrack !== null && !browsing
 
@@ -77,6 +59,17 @@ export default function App() {
       setBrowsing(false)
     }
   }
+
+  // Tonearm dropped onto the record → start playing (first track if none yet).
+  const handleEngage = () => {
+    if (currentTrack) play()
+    else if (hasTracks) {
+      selectTrack(tracks[0])
+      setBrowsing(false)
+    }
+  }
+  // Tonearm lifted off the record → pause.
+  const handleDisengage = () => pause()
 
   // Selecting from the list: same track just re-opens its photos (no restart).
   const handleSelect = (track: Track) => {
@@ -124,26 +117,26 @@ export default function App() {
 
       <div
         className={[
-          'relative mx-auto flex min-h-[100dvh] max-w-6xl flex-col px-4 py-6 sm:px-6 sm:py-8 lg:px-8',
-          showMiniBar ? 'pb-28 lg:pb-8' : '',
+          'relative mx-auto flex min-h-[100dvh] max-w-6xl flex-col px-4 py-5 sm:px-6 sm:py-7 lg:px-8 lg:py-6',
+          showMiniBar ? 'pb-28 lg:pb-6' : '',
         ].join(' ')}
       >
         {/* Header */}
-        <header className="mb-6 flex flex-col items-center text-center sm:mb-8">
+        <header className="mb-5 flex flex-col items-center text-center lg:mb-4">
           <span className="flex items-center gap-2 rounded-full bg-espresso px-4 py-1.5 text-[0.7rem] font-semibold uppercase tracking-[0.3em] text-cream shadow-soft">
             <Disc3 className="h-4 w-4" />
             A Music Timeline
           </span>
-          <h1 className="mt-3 text-3xl font-semibold text-espresso sm:mt-4 sm:text-5xl">
+          <h1 className="mt-3 text-3xl font-semibold text-espresso sm:text-4xl lg:mt-2 lg:text-5xl">
             Nostalgia Spool
           </h1>
-          <p className="mt-2 max-w-md text-sm text-cocoa sm:text-base">
+          <p className="mt-1.5 max-w-md text-sm text-cocoa sm:text-base">
             Drop the needle on a memory and watch the photos drift by.
           </p>
         </header>
 
         {/* Split layout: vinyl left, content right (stacks on mobile) */}
-        <main className="grid flex-1 grid-cols-1 items-stretch gap-8 lg:grid-cols-2 lg:gap-10">
+        <main className="grid flex-1 grid-cols-1 items-center gap-6 lg:grid-cols-2 lg:gap-10">
           <section className="flex items-center justify-center">
             <VinylPlayer
               track={currentTrack}
@@ -154,6 +147,8 @@ export default function App() {
               duration={duration}
               onSeek={seek}
               onToggle={handleToggle}
+              onEngage={handleEngage}
+              onDisengage={handleDisengage}
             />
           </section>
 
@@ -187,7 +182,7 @@ export default function App() {
           </section>
         </main>
 
-        <footer className="mt-8 text-center text-sm text-cocoa sm:mt-10">
+        <footer className="mt-6 text-center text-sm text-cocoa lg:mt-4">
           Made with warm tape hiss &amp; soft focus · {new Date().getFullYear()}
         </footer>
       </div>

@@ -43,14 +43,12 @@ export default function TrackList({ tracks, activeTrackId, onSelect }: TrackList
           const isActive = track.id === activeTrackId
           return (
             <motion.li key={track.id} variants={item}>
-              <motion.button
+              <button
                 type="button"
                 onClick={() => onSelect(track)}
                 aria-pressed={isActive}
-                whileTap={{ scale: 0.97 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                 className={[
-                  'group flex w-full touch-manipulation items-center gap-4 rounded-2xl px-4 py-3 text-left transition-colors',
+                  'group flex w-full touch-manipulation items-center gap-4 rounded-2xl px-4 py-3 text-left transition-[colors,transform] active:scale-[0.98]',
                   isActive
                     ? 'bg-clay text-cream shadow-soft'
                     : 'border border-cocoa/10 bg-cream/80 text-espresso hover:bg-beige-dark active:bg-beige-dark',
@@ -90,7 +88,7 @@ export default function TrackList({ tracks, activeTrackId, onSelect }: TrackList
                   ].join(' ')}
                   fill="currentColor"
                 />
-              </motion.button>
+              </button>
             </motion.li>
           )
         })}

@@ -13,6 +13,10 @@ interface VinylPlayerProps {
   duration?: number
   onSeek?: (time: number) => void
   onToggle: () => void
+  /** Tonearm dragged onto the record. */
+  onEngage?: () => void
+  /** Tonearm lifted off the record. */
+  onDisengage?: () => void
 }
 
 function formatTime(seconds: number): string {
@@ -31,19 +35,26 @@ export default function VinylPlayer({
   duration = 0,
   onSeek,
   onToggle,
+  onEngage,
+  onDisengage,
 }: VinylPlayerProps) {
   return (
-    <div className="flex w-full flex-col items-center gap-8">
+    <div className="flex w-full flex-col items-center gap-5 sm:gap-6">
       {/* Turntable plinth */}
-      <div className="relative w-full max-w-sm rounded-[2rem] border border-cocoa/15 bg-gradient-to-br from-sand to-beige-dark p-6 shadow-card sm:p-8">
+      <div className="relative w-full max-w-[17rem] rounded-[2rem] border border-cocoa/15 bg-gradient-to-br from-sand to-beige-dark p-6 shadow-card sm:max-w-sm sm:p-8 lg:max-w-[17rem] xl:max-w-[19rem]">
         {/* Soft warm glow that intensifies while playing — pure opacity, cheap */}
         <div
           className="pointer-events-none absolute inset-0 rounded-[2rem] bg-[radial-gradient(circle_at_50%_45%,rgba(194,84,43,0.30),transparent_70%)] blur-xl transition-opacity duration-700"
           style={{ opacity: isPlaying ? 1 : 0 }}
         />
 
-        {/* Tonearm — pivots in from the top-right and rests on the record while playing */}
-        <Tonearm isPlaying={isPlaying} />
+        {/* Tonearm — draggable: drop it on the record to play, lift it off to pause */}
+        <Tonearm
+          isPlaying={isPlaying}
+          canPlay={canPlay}
+          onEngage={onEngage}
+          onDisengage={onDisengage}
+        />
 
         {/* The record itself */}
         <div className="relative mx-auto aspect-square w-full">
@@ -200,17 +211,52 @@ function CoverArt({ src, title }: { src: string; title: string }) {
   )
 }
 
-/** A small, friendly tonearm that swings onto the record while playing. */
-function Tonearm({ isPlaying }: { isPlaying: boolean }) {
+/**
+ * A draggable tonearm. Drag it down onto the record to start playing; lift it
+ * up/away to pause. When idle it gives a gentle periodic nudge to hint that it
+ * can be grabbed. The arm translates with the drag and snaps to the on/off
+ * resting angle on release.
+ */
+function Tonearm({
+  isPlaying,
+  canPlay = true,
+  onEngage,
+  onDisengage,
+}: {
+  isPlaying: boolean
+  canPlay?: boolean
+  onEngage?: () => void
+  onDisengage?: () => void
+}) {
+  const [dragging, setDragging] = useState(false)
+  const idle = !isPlaying && !dragging
+
   return (
     <motion.div
-      className="pointer-events-none absolute -right-2 -top-4 z-20 origin-top-right sm:-right-3"
-      initial={false}
-      animate={{ rotate: isPlaying ? 28 : -6 }}
-      transition={{ type: 'spring', stiffness: 120, damping: 14 }}
+      className="absolute -right-2 -top-4 z-20 origin-top-right cursor-grab touch-none drop-shadow active:cursor-grabbing sm:-right-3"
       style={{ width: '38%' }}
+      drag
+      dragConstraints={{ top: -14, bottom: 42, left: -36, right: 14 }}
+      dragElastic={0.5}
+      dragSnapToOrigin
+      whileDrag={{ scale: 1.04 }}
+      onDragStart={() => setDragging(true)}
+      onDragEnd={(_, info) => {
+        setDragging(false)
+        const { x, y } = info.offset
+        const ontoRecord = y > 24 || x < -24 // dragged down / toward the record
+        const offRecord = y < -24 || x > 24 // lifted up / away from the record
+        if (!isPlaying && ontoRecord && canPlay) onEngage?.()
+        else if (isPlaying && offRecord) onDisengage?.()
+      }}
+      animate={idle ? { rotate: [-6, 1.5, -6] } : { rotate: isPlaying ? 28 : -6 }}
+      transition={
+        idle
+          ? { duration: 0.85, repeat: Infinity, repeatDelay: 2.4, ease: 'easeInOut' }
+          : { type: 'spring', stiffness: 120, damping: 14 }
+      }
     >
-      <svg viewBox="0 0 120 200" className="h-auto w-full drop-shadow">
+      <svg viewBox="0 0 120 200" className="h-auto w-full">
         {/* Pivot base */}
         <circle cx="96" cy="24" r="16" fill="#A23F1C" />
         <circle cx="96" cy="24" r="7" fill="#F6EAD2" />

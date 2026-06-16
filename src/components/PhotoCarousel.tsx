@@ -42,9 +42,10 @@ export default function PhotoCarousel({
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const photoCount = track.photos.length
 
-  // On phones, photos are swiped vertically; on larger screens, horizontally.
+  // Inline carousel is always horizontal so the page can still scroll
+  // vertically on mobile. The fullscreen lightbox swipes vertically on phones.
   const isMobile = useMediaQuery('(max-width: 640px)')
-  const axis = isMobile ? 'y' : 'x'
+  const lightboxAxis = isMobile ? 'y' : 'x'
 
   useEffect(() => {
     setIndex(0)
@@ -131,7 +132,7 @@ export default function PhotoCarousel({
           <Swiper
             count={photoCount}
             index={index}
-            axis={axis}
+            axis="x"
             onIndexChange={setIndex}
             onTap={() => setLightboxOpen(true)}
             onInteractStart={() => setIsPaused(true)}
@@ -224,7 +225,7 @@ export default function PhotoCarousel({
             photos={track.photos}
             title={track.title}
             index={index}
-            axis={axis}
+            axis={lightboxAxis}
             onIndexChange={setIndex}
             onClose={() => setLightboxOpen(false)}
           />

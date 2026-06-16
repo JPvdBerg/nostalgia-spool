@@ -25,13 +25,15 @@ button {
   touch-action: manipulation;
 }
 
-/* Honour users who prefer reduced motion: keep transitions, drop loops. */
+/*
+  Honour reduced-motion for page transitions and scrolling, but keep the
+  essential ambient loops (the spinning record, equalizer, play-button pulse) —
+  the record spinning is core to what this UI *is*.
+*/
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
