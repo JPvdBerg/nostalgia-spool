@@ -6,8 +6,15 @@ import {
   useState,
   type RefObject,
 } from 'react'
-import { AnimatePresence, motion, useScroll, useTransform } from 'framer-motion'
 import {
+  AnimatePresence,
+  motion,
+  useScroll,
+  useTransform,
+  type MotionValue,
+} from 'framer-motion'
+import {
+  BookOpen,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -19,11 +26,12 @@ import {
   SkipForward,
   X,
 } from 'lucide-react'
-import type { Track } from '../types'
+import type { Track, Photo } from '../types'
 import Swiper from './Swiper'
 
 interface PhotoCarouselProps {
   track: Track
+  time?: MotionValue<number>
   onBackToPlaylist: () => void
   onPrevTrack?: () => void
   prevTrackTitle?: string
@@ -36,8 +44,12 @@ const AUTOPLAY_INTERVAL = 4000
 
 const clamp = (n: number, max: number) => Math.max(0, Math.min(max, n))
 
+const getPhotoSrc = (photo: string | Photo): string =>
+  typeof photo === 'string' ? photo : photo.src
+
 export default function PhotoCarousel({
   track,
+  time,
   onBackToPlaylist,
   onPrevTrack,
   prevTrackTitle,
@@ -47,11 +59,23 @@ export default function PhotoCarousel({
   const [index, setIndex] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
   const [lightboxOpen, setLightboxOpen] = useState(false)
+  const [showingNotes, setShowingNotes] = useState(false)
   const photoCount = track.photos.length
+
+  // Normalize photos and extract timestamps for audio sync.
+  const photoTimestamps = useMemo(
+    () =>
+      track.photos.map((p) => {
+        if (typeof p === 'string') return { src: p, timestamp: undefined }
+        return p
+      }),
+    [track.photos],
+  )
 
   useEffect(() => {
     setIndex(0)
     setLightboxOpen(false)
+    setShowingNotes(false)
   }, [track.id])
 
   const goTo = useCallback(
@@ -61,6 +85,27 @@ export default function PhotoCarousel({
     },
     [photoCount],
   )
+
+  // Audio-synced photo drops — if photos have timestamps, jump to them as the track plays.
+  useEffect(() => {
+    if (!time) return
+    const unsubscribe = time.onChange((currentTime) => {
+      let targetIndex = 0
+      for (let i = photoTimestamps.length - 1; i >= 0; i--) {
+        if (
+          photoTimestamps[i].timestamp !== undefined &&
+          photoTimestamps[i].timestamp! <= currentTime
+        ) {
+          targetIndex = i
+          break
+        }
+      }
+      if (targetIndex !== index && !isPaused) {
+        setIndex(targetIndex)
+      }
+    })
+    return () => unsubscribe()
+  }, [time, photoTimestamps, index, isPaused])
 
   // Auto-advance while a memory plays — loops back to the first photo, and
   // pauses while the user interacts or the lightbox is open.
@@ -77,7 +122,7 @@ export default function PhotoCarousel({
     const preload = (i: number) => {
       if (i >= 0 && i < photoCount) {
         const img = new Image()
-        img.src = track.photos[i]
+        img.src = getPhotoSrc(track.photos[i])
       }
     }
     preload(index + 1)
@@ -104,24 +149,44 @@ export default function PhotoCarousel({
           </p>
           <h2 className="truncate text-xl font-semibold text-espresso">{track.title}</h2>
         </div>
-        <motion.button
-          type="button"
-          onClick={onBackToPlaylist}
-          whileTap={{ scale: 0.95 }}
-          className="flex shrink-0 touch-manipulation items-center gap-2 rounded-full bg-espresso px-3.5 py-2 text-sm font-semibold text-cream shadow-soft transition-colors hover:bg-cocoa"
-        >
-          <ListMusic className="h-4 w-4" />
-          <span className="hidden sm:inline">Back to Playlist</span>
-          <span className="sm:hidden">Playlist</span>
-        </motion.button>
+        <div className="flex shrink-0 gap-2">
+          {track.linerNotes && (
+            <motion.button
+              type="button"
+              onClick={() => setShowingNotes(!showingNotes)}
+              whileTap={{ scale: 0.95 }}
+              title="Read liner notes"
+              className="flex touch-manipulation items-center justify-center rounded-full bg-clay p-2 text-cream shadow-soft transition-colors hover:bg-clay-dark"
+            >
+              <BookOpen className="h-4 w-4" />
+            </motion.button>
+          )}
+          <motion.button
+            type="button"
+            onClick={onBackToPlaylist}
+            whileTap={{ scale: 0.95 }}
+            className="flex touch-manipulation items-center gap-2 rounded-full bg-espresso px-3.5 py-2 text-sm font-semibold text-cream shadow-soft transition-colors hover:bg-cocoa"
+          >
+            <ListMusic className="h-4 w-4" />
+            <span className="hidden sm:inline">Back to Playlist</span>
+            <span className="sm:hidden">Playlist</span>
+          </motion.button>
+        </div>
       </header>
 
-      {/* Stage */}
-      <div
-        className="group relative min-h-0 flex-1 select-none overflow-hidden rounded-2xl bg-espresso shadow-inner-warm"
-        onMouseEnter={() => setIsPaused(true)}
-        onMouseLeave={() => setIsPaused(false)}
+      {/* Stage — flips to show liner notes if available */}
+      <motion.div
+        className="relative min-h-0 flex-1"
+        style={{ perspective: 1000 }}
+        animate={{ rotateY: showingNotes ? 180 : 0 }}
+        transition={{ duration: 0.6, ease: 'easeInOut' }}
       >
+        <div
+          className="group relative min-h-0 flex-1 select-none overflow-hidden rounded-2xl bg-espresso shadow-inner-warm"
+          onMouseEnter={() => setIsPaused(true)}
+          onMouseLeave={() => setIsPaused(false)}
+          style={{ backfaceVisibility: 'hidden' }}
+        >
         {photoCount === 0 ? (
           <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-cream/70">
             <Images className="h-10 w-10" strokeWidth={1.5} />
@@ -140,7 +205,7 @@ export default function PhotoCarousel({
             onInteractStart={() => setIsPaused(true)}
             onInteractEnd={() => setIsPaused(false)}
             renderSlide={(i) => (
-              <Photo src={track.photos[i]} alt={`${track.title} — photo ${i + 1}`} cover />
+              <Photo src={getPhotoSrc(track.photos[i])} alt={`${track.title} — photo ${i + 1}`} cover />
             )}
           />
         )}
@@ -167,7 +232,17 @@ export default function PhotoCarousel({
             />
           </>
         )}
-      </div>
+        </div>
+
+        {/* Liner Notes Back Side */}
+        <div
+          className="absolute inset-0 rounded-2xl bg-gradient-to-b from-espresso to-cocoa p-5 sm:p-7 overflow-auto flex flex-col"
+          style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
+        >
+          <h3 className="text-lg font-semibold text-cream mb-3">Liner Notes</h3>
+          <p className="text-sm text-cream/90 leading-relaxed flex-1">{track.linerNotes}</p>
+        </div>
+      </motion.div>
 
       {/* Dots */}
       {photoCount > 1 && (
@@ -241,7 +316,7 @@ export default function PhotoCarousel({
 /* ------------------------------------------------------------------ */
 
 interface LightboxProps {
-  photos: string[]
+  photos: (string | Photo)[]
   title: string
   index: number
   onIndexChange: (i: number) => void
@@ -376,11 +451,11 @@ function Lightbox({ photos, title, index, onIndexChange, onClose }: LightboxProp
         ref={scrollRef}
         className="relative min-h-0 flex-1 snap-y snap-mandatory overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch] [scrollbar-width:none]"
       >
-        {photos.map((src, i) => (
+        {photos.map((photo, i) => (
           <ScrapbookPhoto
             key={i}
             index={i}
-            src={src}
+            src={getPhotoSrc(photo)}
             alt={`${title} — photo ${i + 1}`}
             rest={rests[i]}
             container={scrollRef}

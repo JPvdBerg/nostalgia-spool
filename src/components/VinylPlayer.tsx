@@ -33,6 +33,8 @@ interface VinylPlayerProps {
   onEngage?: () => void
   /** Tonearm lifted off the record. */
   onDisengage?: () => void
+  /** 3-second long-press on vinyl centre (easter egg). */
+  onLongPressCentre?: () => void
 }
 
 function formatTime(seconds: number): string {
@@ -57,10 +59,13 @@ export default function VinylPlayer({
   onToggle,
   onEngage,
   onDisengage,
+  onLongPressCentre,
 }: VinylPlayerProps) {
   // Rotation lives on the parent that holds BOTH the record and the cover, so
   // they spin in sync. A single composited transform; no per-frame React state.
   const rotation = useMotionValue(0)
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   useEffect(() => {
     if (!isPlaying) return
     const controls = animate(rotation, rotation.get() + 360, {
@@ -71,6 +76,22 @@ export default function VinylPlayer({
     })
     return () => controls.stop()
   }, [isPlaying, rotation])
+
+  // Long-press handler for the centre label (easter egg).
+  const handleCentreLabelDown = useCallback(() => {
+    if (!onLongPressCentre) return
+    longPressTimer.current = setTimeout(() => {
+      onLongPressCentre()
+      longPressTimer.current = null
+    }, 3000)
+  }, [onLongPressCentre])
+
+  const handleCentreLabelUp = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }, [])
 
   // Audio-reactive glow: read the analyser in a rAF loop and push the intensity
   // into a CSS custom property via a ref. NO React state, NO layout thrash —
@@ -159,7 +180,12 @@ export default function VinylPlayer({
             <span className="pointer-events-none absolute inset-0 rounded-full bg-[conic-gradient(from_0deg,transparent_0deg,rgba(255,255,255,0.12)_35deg,transparent_90deg,transparent_260deg,rgba(255,255,255,0.07)_310deg,transparent_360deg)]" />
 
             {/* Centre label / cover art (child → spins with the record) */}
-            <div className="absolute left-1/2 top-1/2 aspect-square w-[42%] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-full border-4 border-cream/80 bg-beige-dark shadow-inner-warm">
+            <div
+              className="absolute left-1/2 top-1/2 aspect-square w-[42%] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-full border-4 border-cream/80 bg-beige-dark shadow-inner-warm cursor-pointer select-none"
+              onPointerDown={handleCentreLabelDown}
+              onPointerUp={handleCentreLabelUp}
+              onPointerCancel={handleCentreLabelUp}
+            >
               {track ? (
                 <CoverArt key={track.id} src={track.coverArt} title={track.title} />
               ) : (

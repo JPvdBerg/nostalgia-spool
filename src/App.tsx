@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { animate, AnimatePresence, motion, useMotionValue, useMotionTemplate } from 'framer-motion'
 import { Disc3, Pause, Play } from 'lucide-react'
 import VinylPlayer from './components/VinylPlayer'
 import TrackList from './components/TrackList'
@@ -21,6 +21,11 @@ const panelMotion = {
 export default function App() {
   const hasTracks = tracks.length > 0
   const [appReady, setAppReady] = useState(false)
+  const [unlockedTracks, setUnlockedTracks] = useState<Set<string>>(new Set())
+
+  // Dynamic background color animation (defaults to cream).
+  const bgColor = useMotionValue('#F6EAD2')
+  const bgGradient = useMotionTemplate`linear-gradient(to bottom, ${bgColor} 0%, #F6EAD2 50%, #D4C4B1 100%)`
 
   // Stable refs let the once-registered "ended" handler reach fresh values
   // without re-subscribing the audio element each render.
@@ -107,13 +112,33 @@ export default function App() {
     onPrevTrack: () => prevTrack && goToTrack(prevTrack),
   })
 
+  // Unlock a hidden track and play it immediately (via easter egg).
+  const unlockAndPlay = useCallback(
+    (track: Track) => {
+      setUnlockedTracks((prev) => new Set([...prev, track.id]))
+      selectTrack(track)
+      setBrowsing(false)
+    },
+    [selectTrack],
+  )
+
+  // Animate background color on track change (1.5s soft bleed).
+  useEffect(() => {
+    const targetColor = currentTrack?.themeColor || '#F6EAD2'
+    void animate(bgColor, targetColor, {
+      duration: 1.5,
+      ease: 'easeInOut',
+    })
+  }, [currentTrack, bgColor])
+
   // Mini bar shows on mobile when something is loaded but we're browsing.
   const showMiniBar = currentTrack !== null && browsing
 
   // Asset preload targets for the loading screen.
   const firstTrack = tracks[0]
   const coverArts = tracks.map((t) => t.coverArt)
-  const firstPhotos = firstTrack?.photos || []
+  const firstPhotos =
+    firstTrack?.photos.map((p) => (typeof p === 'string' ? p : p.src)) || []
   const firstAudioSrc = firstTrack?.audioSrc || ''
 
   return (
@@ -124,11 +149,12 @@ export default function App() {
         firstPhotos={firstPhotos}
         firstAudioSrc={firstAudioSrc}
       />
-      <div
+      <motion.div
         className={[
-          'relative min-h-[100dvh] overflow-hidden bg-gradient-to-b from-cream via-cream to-beige-dark/70 lg:h-screen',
+          'relative min-h-[100dvh] overflow-hidden lg:h-screen',
           !appReady ? 'hidden' : '',
         ].join(' ')}
+        style={{ backgroundImage: bgGradient }}
       >
       {/* Decorative depth — static blurred orbs, painted once, no per-frame cost */}
       <div
@@ -179,6 +205,10 @@ export default function App() {
               onToggle={handleToggle}
               onEngage={handleEngage}
               onDisengage={handleDisengage}
+              onLongPressCentre={() => {
+                const hiddenTrack = tracks.find((t) => t.isHidden && !unlockedTracks.has(t.id))
+                if (hiddenTrack) unlockAndPlay(hiddenTrack)
+              }}
             />
           </section>
 
@@ -189,6 +219,7 @@ export default function App() {
                   <motion.div key="carousel" className="h-full" {...panelMotion}>
                     <PhotoCarousel
                       track={currentTrack}
+                      time={time}
                       onBackToPlaylist={() => setBrowsing(true)}
                       onPrevTrack={prevTrack ? () => goToTrack(prevTrack) : undefined}
                       prevTrackTitle={prevTrack?.title}
@@ -199,7 +230,7 @@ export default function App() {
                 ) : (
                   <motion.div key="tracklist" className="h-full" {...panelMotion}>
                     <TrackList
-                      tracks={tracks}
+                      tracks={tracks.filter((t) => !t.isHidden || unlockedTracks.has(t.id))}
                       activeTrackId={currentTrack?.id ?? null}
                       onSelect={handleSelect}
                     />
@@ -263,7 +294,7 @@ export default function App() {
 
       {/* Non-blocking error toast for audio/playback problems */}
       <Toast message={error} onDismiss={clearError} />
-      </div>
+      </motion.div>
     </>
   )
 }

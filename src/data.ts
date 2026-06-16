@@ -27,6 +27,9 @@ export const tracks: Track[] = [
       asset('images/wonderful-nothing/02.jpg'),
       asset('images/wonderful-nothing/03.jpg'),
     ],
+    themeColor: '#E8D4C0',
+    linerNotes:
+      "A sun-drenched moment captured in motion. The kind of afternoon that feels timeless.",
   },
   {
     id: 'first-snowfall',
@@ -40,6 +43,9 @@ export const tracks: Track[] = [
       asset('images/first-snowfall/02.jpg'),
       asset('images/first-snowfall/03.jpg'),
     ],
+    themeColor: '#D4E8F0',
+    linerNotes:
+      "Silence falling like snow. Everything quieter, softer, waiting for spring.",
   },
   {
     id: 'late-night-drives',
@@ -55,6 +61,9 @@ export const tracks: Track[] = [
       asset('images/late-night-drives/04.jpg'),
       asset('images/late-night-drives/05.jpg'),
     ],
+    themeColor: '#2C2C3C',
+    linerNotes:
+      "Empty highways and endless radio. The dashboard lights blur together as the miles disappear.",
   },
   {
     id: 'seaside-mornings',
@@ -68,6 +77,9 @@ export const tracks: Track[] = [
       asset('images/seaside-mornings/02.jpg'),
       asset('images/seaside-mornings/03.jpg'),
     ],
+    themeColor: '#A8D8DA',
+    linerNotes:
+      "Salt air and first light. The kind of morning that makes you believe in new beginnings.",
   },
   {
     id: 'golden-hour',
@@ -82,5 +94,23 @@ export const tracks: Track[] = [
       asset('images/golden-hour/03.jpg'),
       asset('images/golden-hour/04.jpg'),
     ],
+    themeColor: '#F4D9A6',
+    linerNotes:
+      "The sky on fire. Everything glowing amber. The day's last breath, held tight.",
+  },
+  {
+    id: 'secret-sessions',
+    title: 'Secret Sessions',
+    era: '???',
+    artist: 'Unknown',
+    coverArt: asset('images/golden-hour/cover.jpg'),
+    audioSrc: asset('audio/golden-hour.mp3'),
+    photos: [
+      asset('images/golden-hour/01.jpg'),
+      asset('images/golden-hour/02.jpg'),
+    ],
+    themeColor: '#8B4789',
+    linerNotes: "A memory you thought was lost. Found in the silence between songs.",
+    isHidden: true,
   },
 ]

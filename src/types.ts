@@ -1,3 +1,9 @@
+/** Photo with optional audio-sync timestamp. */
+export interface Photo {
+  src: string
+  timestamp?: number
+}
+
 /**
  * A single "track" represents one memory / era in the timeline.
  * It owns its own audio file and the photos that cross-fade while it plays.
@@ -15,6 +21,12 @@ export interface Track {
   coverArt: string
   /** Path to the local MP3 in /public/audio. */
   audioSrc: string
-  /** Ordered photos for the cross-fading carousel (paths in /public/images). */
-  photos: string[]
+  /** Ordered photos for the cross-fading carousel (strings or Photo objects with timestamps). */
+  photos: (string | Photo)[]
+  /** Optional theme color (hex code) that animates the background. */
+  themeColor?: string
+  /** Optional typeset story or context about the memory. */
+  linerNotes?: string
+  /** If true, hidden from the main tracklist until unlocked via easter egg. */
+  isHidden?: boolean
 }
