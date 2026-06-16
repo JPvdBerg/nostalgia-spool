@@ -6,6 +6,8 @@ interface VinylPlayerProps {
   track: Track | null
   isPlaying: boolean
   isLoading?: boolean
+  /** Whether playback can be started at all (there is at least one track). */
+  canPlay?: boolean
   onToggle: () => void
 }
 
@@ -13,6 +15,7 @@ export default function VinylPlayer({
   track,
   isPlaying,
   isLoading = false,
+  canPlay = true,
   onToggle,
 }: VinylPlayerProps) {
   return (
@@ -41,7 +44,7 @@ export default function VinylPlayer({
             where it is — no snap back to 0deg.
           */}
           <div
-            className="transform-gpu will-change-transform relative h-full w-full animate-[spin_7s_linear_infinite] rounded-full bg-[radial-gradient(circle_at_center,#3a2a1d_0%,#1c130c_55%,#2a1d12_100%)] shadow-soft-lg"
+            className="transform-gpu will-change-transform relative h-full w-full animate-[spin_3.5s_linear_infinite] rounded-full bg-[radial-gradient(circle_at_center,#3a2a1d_0%,#1c130c_55%,#2a1d12_100%)] shadow-soft-lg"
             style={{ animationPlayState: isPlaying ? 'running' : 'paused' }}
           >
             {/* Concentric grooves */}
@@ -81,10 +84,16 @@ export default function VinylPlayer({
               {/* Spindle hole */}
               <span className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cream shadow-inner-warm" />
             </div>
-
-            {/* Static specular highlight for depth (doesn't rotate visually with content) */}
-            <span className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(circle_at_30%_25%,rgba(255,255,255,0.18),transparent_45%)]" />
           </div>
+
+          {/*
+            Fixed specular glint — sits OUTSIDE the spinning layer so the light
+            stays put while the record turns beneath it. This is what sells the
+            spin (the grooves/label move past a stationary highlight) and adds
+            the 3D depth that was missing.
+          */}
+          <span className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(circle_at_32%_24%,rgba(255,255,255,0.22),transparent_42%)]" />
+          <span className="pointer-events-none absolute inset-0 rounded-full shadow-[inset_0_0_40px_rgba(0,0,0,0.55)]" />
         </div>
       </div>
 
@@ -104,7 +113,7 @@ export default function VinylPlayer({
           ) : (
             <p className="flex items-center gap-2 text-brown-med">
               <Disc3 className="h-5 w-5" />
-              Pick a memory to start spinning
+              Press play to start, or pick a memory
             </p>
           )}
         </div>
@@ -122,9 +131,9 @@ export default function VinylPlayer({
           <motion.button
             type="button"
             onClick={onToggle}
-            disabled={!track || isLoading}
+            disabled={isLoading || (!track && !canPlay)}
             whileTap={{ scale: 0.92 }}
-            whileHover={{ scale: track && !isLoading ? 1.05 : 1 }}
+            whileHover={{ scale: (track || canPlay) && !isLoading ? 1.05 : 1 }}
             aria-label={isLoading ? 'Loading' : isPlaying ? 'Pause' : 'Play'}
             aria-busy={isLoading}
             className="relative flex h-16 w-16 touch-manipulation select-none items-center justify-center rounded-full bg-brown-dark text-cream shadow-soft transition-colors hover:bg-brown-med disabled:cursor-not-allowed disabled:bg-beige-dark disabled:text-cream/70"

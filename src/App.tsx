@@ -32,6 +32,22 @@ export default function App() {
   // and falls back to the tracklist otherwise.
   const showCarousel = currentTrack !== null
 
+  // Pressing play with nothing selected starts the first track.
+  const handleToggle = () => {
+    if (currentTrack) toggle()
+    else if (hasTracks) selectTrack(tracks[0])
+  }
+
+  // Work out the adjacent tracks (for the prev/next buttons), if any.
+  const currentIndex = currentTrack
+    ? tracks.findIndex((t) => t.id === currentTrack.id)
+    : -1
+  const prevTrack = currentIndex > 0 ? tracks[currentIndex - 1] : undefined
+  const nextTrack =
+    currentIndex >= 0 && currentIndex < tracks.length - 1
+      ? tracks[currentIndex + 1]
+      : undefined
+
   return (
     <div className="relative min-h-[100dvh] overflow-hidden bg-gradient-to-b from-cream via-cream to-sand">
       {/* Decorative depth — static blurred orbs, painted once, no per-frame cost */}
@@ -70,7 +86,8 @@ export default function App() {
               track={currentTrack}
               isPlaying={isPlaying}
               isLoading={isLoading}
-              onToggle={toggle}
+              canPlay={hasTracks}
+              onToggle={handleToggle}
             />
           </section>
 
@@ -79,7 +96,14 @@ export default function App() {
               <AnimatePresence mode="wait" initial={false}>
                 {showCarousel && currentTrack ? (
                   <motion.div key="carousel" className="h-full" {...panelMotion}>
-                    <PhotoCarousel track={currentTrack} onBackToPlaylist={stop} />
+                    <PhotoCarousel
+                      track={currentTrack}
+                      onBackToPlaylist={stop}
+                      onPrevTrack={prevTrack ? () => selectTrack(prevTrack) : undefined}
+                      prevTrackTitle={prevTrack?.title}
+                      onNextTrack={nextTrack ? () => selectTrack(nextTrack) : undefined}
+                      nextTrackTitle={nextTrack?.title}
+                    />
                   </motion.div>
                 ) : (
                   <motion.div key="tracklist" className="h-full" {...panelMotion}>

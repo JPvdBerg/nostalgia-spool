@@ -37,21 +37,23 @@ export default function TrackList({ tracks, activeTrackId, onSelect }: TrackList
         variants={container}
         initial="hidden"
         animate="show"
-        className="-mr-2 flex-1 space-y-2 overflow-y-auto pr-2"
+        className="-mr-2 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-2 [-webkit-overflow-scrolling:touch]"
       >
         {tracks.map((track, index) => {
           const isActive = track.id === activeTrackId
           return (
             <motion.li key={track.id} variants={item}>
-              <button
+              <motion.button
                 type="button"
                 onClick={() => onSelect(track)}
                 aria-pressed={isActive}
+                whileTap={{ scale: 0.97 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                 className={[
-                  'group flex w-full items-center gap-4 rounded-2xl px-4 py-3 text-left transition-colors',
+                  'group flex w-full touch-manipulation items-center gap-4 rounded-2xl px-4 py-3 text-left transition-colors',
                   isActive
                     ? 'bg-brown-dark text-cream shadow-soft'
-                    : 'bg-cream/70 text-brown-dark hover:bg-beige-dark',
+                    : 'bg-cream/70 text-brown-dark hover:bg-beige-dark active:bg-beige-dark',
                 ].join(' ')}
               >
                 <span
@@ -88,7 +90,7 @@ export default function TrackList({ tracks, activeTrackId, onSelect }: TrackList
                   ].join(' ')}
                   fill="currentColor"
                 />
-              </button>
+              </motion.button>
             </motion.li>
           )
         })}
