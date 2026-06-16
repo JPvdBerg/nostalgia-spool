@@ -1,5 +1,4 @@
-import { useEffect } from 'react'
-import { motion, useMotionValue, animate } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { Pause, Play, Disc3, Music2, Loader2 } from 'lucide-react'
 import type { Track } from '../types'
 
@@ -10,38 +9,22 @@ interface VinylPlayerProps {
   onToggle: () => void
 }
 
-/** Seconds for one full 360° revolution of the record. */
-const ROTATION_DURATION = 6
-
 export default function VinylPlayer({
   track,
   isPlaying,
   isLoading = false,
   onToggle,
 }: VinylPlayerProps) {
-  // Drive the record's rotation with a motion value so that pausing freezes
-  // it exactly where it is (instead of snapping back to 0deg).
-  const rotation = useMotionValue(0)
-
-  useEffect(() => {
-    if (!isPlaying) return
-
-    const from = rotation.get()
-    const controls = animate(rotation, from + 360, {
-      ease: 'linear',
-      duration: ROTATION_DURATION,
-      repeat: Infinity,
-      repeatType: 'loop',
-    })
-
-    // Stopping the animation leaves `rotation` at its current angle.
-    return () => controls.stop()
-  }, [isPlaying, rotation])
-
   return (
     <div className="flex w-full flex-col items-center gap-8">
       {/* Turntable plinth */}
-      <div className="relative w-full max-w-sm rounded-[2rem] bg-sand p-6 shadow-soft-lg sm:p-8">
+      <div className="relative w-full max-w-sm rounded-[2rem] bg-gradient-to-br from-sand to-beige-dark/70 p-6 shadow-soft-lg sm:p-8">
+        {/* Soft warm glow that intensifies while playing — pure opacity, cheap */}
+        <div
+          className="pointer-events-none absolute inset-0 rounded-[2rem] bg-[radial-gradient(circle_at_50%_45%,rgba(168,121,84,0.35),transparent_70%)] blur-xl transition-opacity duration-700"
+          style={{ opacity: isPlaying ? 1 : 0 }}
+        />
+
         {/* Tonearm — pivots in from the top-right and rests on the record while playing */}
         <Tonearm isPlaying={isPlaying} />
 
@@ -50,9 +33,16 @@ export default function VinylPlayer({
           {/* Spindle shadow / platter base */}
           <div className="absolute inset-0 rounded-full bg-brown-med/20 blur-md" />
 
-          <motion.div
-            style={{ rotate: rotation }}
-            className="relative h-full w-full rounded-full bg-[radial-gradient(circle_at_center,#3a2a1d_0%,#1c130c_55%,#2a1d12_100%)] shadow-soft-lg"
+          {/*
+            Rotation is a pure CSS animation on its own compositor layer
+            (transform-gpu + will-change). The browser paints the record once
+            and just spins the cached texture, so it stays smooth even with the
+            gradients/shadows. `animation-play-state: paused` freezes it exactly
+            where it is — no snap back to 0deg.
+          */}
+          <div
+            className="transform-gpu will-change-transform relative h-full w-full animate-[spin_7s_linear_infinite] rounded-full bg-[radial-gradient(circle_at_center,#3a2a1d_0%,#1c130c_55%,#2a1d12_100%)] shadow-soft-lg"
+            style={{ animationPlayState: isPlaying ? 'running' : 'paused' }}
           >
             {/* Concentric grooves */}
             {[0.92, 0.82, 0.72, 0.62].map((scale) => (
@@ -68,7 +58,7 @@ export default function VinylPlayer({
             ))}
 
             {/* Subtle sheen so the vinyl reads as glossy while spinning */}
-            <span className="pointer-events-none absolute inset-0 rounded-full bg-[conic-gradient(from_0deg,transparent_0deg,rgba(255,255,255,0.10)_40deg,transparent_90deg,transparent_270deg,rgba(255,255,255,0.06)_310deg,transparent_360deg)]" />
+            <span className="pointer-events-none absolute inset-0 rounded-full bg-[conic-gradient(from_0deg,transparent_0deg,rgba(255,255,255,0.12)_35deg,transparent_90deg,transparent_260deg,rgba(255,255,255,0.07)_310deg,transparent_360deg)]" />
 
             {/* Centre label / cover art */}
             <div className="absolute left-1/2 top-1/2 aspect-square w-[42%] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-full border-4 border-cream/80 bg-beige-dark shadow-inner-warm">
@@ -91,7 +81,10 @@ export default function VinylPlayer({
               {/* Spindle hole */}
               <span className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cream shadow-inner-warm" />
             </div>
-          </motion.div>
+
+            {/* Static specular highlight for depth (doesn't rotate visually with content) */}
+            <span className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(circle_at_30%_25%,rgba(255,255,255,0.18),transparent_45%)]" />
+          </div>
         </div>
       </div>
 
@@ -116,24 +109,35 @@ export default function VinylPlayer({
           )}
         </div>
 
-        <motion.button
-          type="button"
-          onClick={onToggle}
-          disabled={!track || isLoading}
-          whileTap={{ scale: 0.92 }}
-          whileHover={{ scale: track && !isLoading ? 1.05 : 1 }}
-          aria-label={isLoading ? 'Loading' : isPlaying ? 'Pause' : 'Play'}
-          aria-busy={isLoading}
-          className="flex h-16 w-16 touch-manipulation select-none items-center justify-center rounded-full bg-brown-dark text-cream shadow-soft transition-colors hover:bg-brown-med disabled:cursor-not-allowed disabled:bg-beige-dark disabled:text-cream/70"
-        >
-          {isLoading ? (
-            <Loader2 className="h-7 w-7 animate-spin" />
-          ) : isPlaying ? (
-            <Pause className="h-7 w-7" fill="currentColor" />
-          ) : (
-            <Play className="ml-1 h-7 w-7" fill="currentColor" />
+        <div className="relative flex items-center justify-center">
+          {/* Soft pulsing ring while playing — transform/opacity only (cheap) */}
+          {isPlaying && (
+            <motion.span
+              className="pointer-events-none absolute h-16 w-16 rounded-full bg-brown-dark/30"
+              initial={{ scale: 1, opacity: 0.6 }}
+              animate={{ scale: 1.8, opacity: 0 }}
+              transition={{ duration: 1.8, repeat: Infinity, ease: 'easeOut' }}
+            />
           )}
-        </motion.button>
+          <motion.button
+            type="button"
+            onClick={onToggle}
+            disabled={!track || isLoading}
+            whileTap={{ scale: 0.92 }}
+            whileHover={{ scale: track && !isLoading ? 1.05 : 1 }}
+            aria-label={isLoading ? 'Loading' : isPlaying ? 'Pause' : 'Play'}
+            aria-busy={isLoading}
+            className="relative flex h-16 w-16 touch-manipulation select-none items-center justify-center rounded-full bg-brown-dark text-cream shadow-soft transition-colors hover:bg-brown-med disabled:cursor-not-allowed disabled:bg-beige-dark disabled:text-cream/70"
+          >
+            {isLoading ? (
+              <Loader2 className="h-7 w-7 animate-spin" />
+            ) : isPlaying ? (
+              <Pause className="h-7 w-7" fill="currentColor" />
+            ) : (
+              <Play className="ml-1 h-7 w-7" fill="currentColor" />
+            )}
+          </motion.button>
+        </div>
       </div>
     </div>
   )

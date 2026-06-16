@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AnimatePresence, motion, type PanInfo } from 'framer-motion'
-import { ChevronLeft, ChevronRight, ImageOff, Images, ListMusic } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  ImageOff,
+  Images,
+  ListMusic,
+  Maximize2,
+  X,
+} from 'lucide-react'
 import type { Track } from '../types'
 
 interface PhotoCarouselProps {
@@ -16,11 +24,13 @@ const SWIPE_THRESHOLD = 60
 export default function PhotoCarousel({ track, onBackToPlaylist }: PhotoCarouselProps) {
   const [index, setIndex] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
   const photoCount = track.photos.length
 
   // Reset to the first photo whenever the track changes.
   useEffect(() => {
     setIndex(0)
+    setLightboxOpen(false)
   }, [track.id])
 
   const goTo = useCallback(
@@ -31,25 +41,25 @@ export default function PhotoCarousel({ track, onBackToPlaylist }: PhotoCarousel
     [photoCount],
   )
 
-  // Auto-advance with a soft cross-fade — paused while the user interacts.
+  // Auto-advance — paused while the user interacts or the lightbox is open.
   useEffect(() => {
-    if (photoCount <= 1 || isPaused) return
+    if (photoCount <= 1 || isPaused || lightboxOpen) return
     const timer = window.setInterval(() => {
       setIndex((prev) => (prev + 1) % photoCount)
     }, AUTOPLAY_INTERVAL)
     return () => window.clearInterval(timer)
-  }, [photoCount, index, isPaused])
+  }, [photoCount, index, isPaused, lightboxOpen])
 
-  // Keyboard navigation for desktop accessibility.
+  // Keyboard navigation for the inline carousel (desktop).
   useEffect(() => {
-    if (photoCount <= 1) return
+    if (photoCount <= 1 || lightboxOpen) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft') goTo(index - 1)
       if (e.key === 'ArrowRight') goTo(index + 1)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [index, photoCount, goTo])
+  }, [index, photoCount, goTo, lightboxOpen])
 
   const handleDragEnd = (_: unknown, info: PanInfo) => {
     setIsPaused(false)
@@ -58,7 +68,7 @@ export default function PhotoCarousel({ track, onBackToPlaylist }: PhotoCarousel
   }
 
   return (
-    <div className="flex h-full flex-col rounded-3xl bg-sand p-5 shadow-soft sm:p-7">
+    <div className="flex h-full flex-col rounded-3xl bg-gradient-to-b from-sand to-beige-dark/60 p-5 shadow-soft sm:p-7">
       <header className="mb-4 flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs uppercase tracking-[0.25em] text-brown-med">
@@ -82,7 +92,7 @@ export default function PhotoCarousel({ track, onBackToPlaylist }: PhotoCarousel
 
       {/* Stage */}
       <div
-        className="relative flex-1 select-none overflow-hidden rounded-2xl bg-beige-dark shadow-inner-warm"
+        className="group relative flex-1 select-none overflow-hidden rounded-2xl bg-beige-dark shadow-inner-warm"
         onMouseEnter={() => setIsPaused(true)}
         onMouseLeave={() => setIsPaused(false)}
       >
@@ -98,7 +108,7 @@ export default function PhotoCarousel({ track, onBackToPlaylist }: PhotoCarousel
           <AnimatePresence mode="wait">
             <motion.div
               key={index}
-              className="absolute inset-0 cursor-grab active:cursor-grabbing"
+              className="absolute inset-0 cursor-pointer"
               initial={{ opacity: 0, scale: 1.03 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 1.01 }}
@@ -108,14 +118,26 @@ export default function PhotoCarousel({ track, onBackToPlaylist }: PhotoCarousel
               dragElastic={0.18}
               onDragStart={() => setIsPaused(true)}
               onDragEnd={handleDragEnd}
+              onTap={() => setLightboxOpen(true)}
             >
-              <Photo src={track.photos[index]} alt={`${track.title} — photo ${index + 1}`} />
+              <Photo
+                src={track.photos[index]}
+                alt={`${track.title} — photo ${index + 1}`}
+              />
             </motion.div>
           </AnimatePresence>
         )}
 
         {/* Warm vignette so any photo feels cosy */}
         <span className="pointer-events-none absolute inset-0 rounded-2xl shadow-[inset_0_0_80px_rgba(58,42,29,0.35)]" />
+
+        {/* Tap-to-expand affordance */}
+        {photoCount > 0 && (
+          <span className="pointer-events-none absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-brown-dark/55 px-2.5 py-1 text-xs font-medium text-cream backdrop-blur-sm transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
+            <Maximize2 className="h-3.5 w-3.5" />
+            Tap to expand
+          </span>
+        )}
 
         {/* Prev / next controls */}
         {photoCount > 1 && (
@@ -143,7 +165,193 @@ export default function PhotoCarousel({ track, onBackToPlaylist }: PhotoCarousel
           ))}
         </div>
       )}
+
+      <AnimatePresence>
+        {lightboxOpen && photoCount > 0 && (
+          <Lightbox
+            photos={track.photos}
+            title={track.title}
+            index={index}
+            onIndexChange={setIndex}
+            onClose={() => setLightboxOpen(false)}
+          />
+        )}
+      </AnimatePresence>
     </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Fullscreen lightbox — free, self-paced swiping through the photos. */
+/* ------------------------------------------------------------------ */
+
+const slideVariants = {
+  enter: (dir: number) => ({ x: dir > 0 ? '100%' : '-100%', opacity: 0 }),
+  center: { x: 0, opacity: 1 },
+  exit: (dir: number) => ({ x: dir > 0 ? '-100%' : '100%', opacity: 0 }),
+}
+
+interface LightboxProps {
+  photos: string[]
+  title: string
+  index: number
+  onIndexChange: (i: number) => void
+  onClose: () => void
+}
+
+function Lightbox({ photos, title, index, onIndexChange, onClose }: LightboxProps) {
+  const [direction, setDirection] = useState(0)
+  const count = photos.length
+
+  const paginate = useCallback(
+    (dir: number) => {
+      if (count <= 1) return
+      setDirection(dir)
+      onIndexChange((index + dir + count) % count)
+    },
+    [count, index, onIndexChange],
+  )
+
+  // Lock body scroll + wire up Esc / arrow keys while open.
+  useEffect(() => {
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+      if (e.key === 'ArrowLeft') paginate(-1)
+      if (e.key === 'ArrowRight') paginate(1)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = prevOverflow
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [onClose, paginate])
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex flex-col bg-[#1c130c]/95 backdrop-blur-sm"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.25 }}
+    >
+      {/* Top bar */}
+      <div className="flex items-center justify-between px-4 pt-[max(1rem,env(safe-area-inset-top))] text-cream">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold">{title}</p>
+          <p className="text-xs text-cream/70">
+            {index + 1} / {count}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close fullscreen"
+          className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-full bg-cream/10 text-cream transition-colors hover:bg-cream/20"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      {/* Swipeable stage */}
+      <div className="relative flex-1 overflow-hidden">
+        <AnimatePresence custom={direction} initial={false} mode="popLayout">
+          <motion.div
+            key={index}
+            className="absolute inset-0 flex touch-pan-y items-center justify-center p-4"
+            custom={direction}
+            variants={slideVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{
+              x: { type: 'spring', stiffness: 320, damping: 34 },
+              opacity: { duration: 0.2 },
+            }}
+            drag={count > 1 ? 'x' : false}
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={0.25}
+            onDragEnd={(_, info) => {
+              const power = info.offset.x + info.velocity.x * 0.2
+              if (power < -SWIPE_THRESHOLD) paginate(1)
+              else if (power > SWIPE_THRESHOLD) paginate(-1)
+            }}
+          >
+            <LightboxImage
+              src={photos[index]}
+              alt={`${title} — photo ${index + 1}`}
+            />
+          </motion.div>
+        </AnimatePresence>
+
+        {/* Desktop arrows */}
+        {count > 1 && (
+          <>
+            <button
+              type="button"
+              onClick={() => paginate(-1)}
+              aria-label="Previous photo"
+              className="absolute left-3 top-1/2 hidden h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-cream/10 text-cream transition-colors hover:bg-cream/20 sm:flex"
+            >
+              <ChevronLeft className="h-6 w-6" />
+            </button>
+            <button
+              type="button"
+              onClick={() => paginate(1)}
+              aria-label="Next photo"
+              className="absolute right-3 top-1/2 hidden h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-cream/10 text-cream transition-colors hover:bg-cream/20 sm:flex"
+            >
+              <ChevronRight className="h-6 w-6" />
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Dots */}
+      {count > 1 && (
+        <div className="flex items-center justify-center gap-2 px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3">
+          {photos.map((_, i) => (
+            <button
+              key={i}
+              type="button"
+              aria-label={`Go to photo ${i + 1}`}
+              onClick={() => {
+                setDirection(i > index ? 1 : -1)
+                onIndexChange(i)
+              }}
+              className={[
+                'h-2.5 rounded-full transition-all',
+                i === index ? 'w-7 bg-cream' : 'w-2.5 bg-cream/40 hover:bg-cream/70',
+              ].join(' ')}
+            />
+          ))}
+        </div>
+      )}
+    </motion.div>
+  )
+}
+
+function LightboxImage({ src, alt }: { src: string; alt: string }) {
+  const [errored, setErrored] = useState(false)
+
+  if (errored) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 text-cream/70">
+        <ImageOff className="h-10 w-10" strokeWidth={1.5} />
+        <p className="text-sm">Couldn’t load this photo.</p>
+      </div>
+    )
+  }
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      draggable={false}
+      onError={() => setErrored(true)}
+      className="max-h-full max-w-full select-none rounded-xl object-contain shadow-2xl"
+    />
   )
 }
 

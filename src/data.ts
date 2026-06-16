@@ -18,9 +18,9 @@ export const tracks: Track[] = [
   {
     id: 'wonderful-nothing',
     title: 'Wonderful Nothing',
-    era: '2020', // TODO: change to the year/era this memory belongs to
+    era: '2024',
     artist: 'Glass Animals',
-    coverArt: asset('images/wonderful-nothing/cover.jpg'),
+    coverArt: asset('images/wonderful-nothing/cover.webp'),
     audioSrc: asset('audio/wonderful-nothing.mp3'),
     photos: [
       asset('images/wonderful-nothing/01.jpg'),

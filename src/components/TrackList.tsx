@@ -104,9 +104,11 @@ function EqualizerBars() {
     <span className="flex h-4 items-end gap-[3px]">
       {bars.map((i) => (
         <motion.span
+          // Animate scaleY (a composited transform) instead of height to avoid
+          // per-frame layout/reflow — keeps the list buttery while playing.
           key={i}
-          className="w-[3px] rounded-full bg-brown-dark"
-          animate={{ height: ['30%', '100%', '45%'] }}
+          className="h-full w-[3px] origin-bottom rounded-full bg-brown-dark"
+          animate={{ scaleY: [0.3, 1, 0.45] }}
           transition={{
             duration: 0.8,
             repeat: Infinity,
@@ -114,7 +116,7 @@ function EqualizerBars() {
             ease: 'easeInOut',
             delay: i * 0.15,
           }}
-          style={{ height: '50%' }}
+          style={{ scaleY: 0.5 }}
         />
       ))}
     </span>

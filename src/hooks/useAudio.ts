@@ -160,17 +160,18 @@ export function useAudio(): UseAudio {
       audio.pause()
       setError(null)
       setIsLoading(true)
-      trackRef.current = track
 
-      // Only reload the source when the track actually changes; `load()`
-      // discards the previous track's buffered media so nothing overlaps.
-      setCurrentTrack((prev) => {
-        if (prev?.id !== track.id) {
-          audio.src = track.audioSrc
-          audio.load()
-        }
-        return track
-      })
+      // IMPORTANT: set the source *synchronously*, inside the click handler,
+      // BEFORE calling play(). Doing this in a setState updater would run it
+      // during render — after play() had already fired on an empty element,
+      // which rejects and consumes the user gesture (no autoplay).
+      // We compare against the ref (not state) to keep this self-contained.
+      if (trackRef.current?.id !== track.id) {
+        audio.src = track.audioSrc
+        audio.load()
+      }
+      trackRef.current = track
+      setCurrentTrack(track)
 
       try {
         audio.currentTime = 0

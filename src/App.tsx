@@ -33,8 +33,22 @@ export default function App() {
   const showCarousel = currentTrack !== null
 
   return (
-    <div className="min-h-[100dvh] bg-gradient-to-b from-cream via-cream to-sand">
-      <div className="mx-auto flex min-h-[100dvh] max-w-6xl flex-col px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+    <div className="relative min-h-[100dvh] overflow-hidden bg-gradient-to-b from-cream via-cream to-sand">
+      {/* Decorative depth — static blurred orbs, painted once, no per-frame cost */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -left-32 -top-32 h-96 w-96 rounded-full bg-beige-dark/50 blur-3xl"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-40 top-1/3 h-[28rem] w-[28rem] rounded-full bg-brown-med/25 blur-3xl"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -bottom-40 left-1/4 h-96 w-96 rounded-full bg-beige-dark/40 blur-3xl"
+      />
+
+      <div className="relative mx-auto flex min-h-[100dvh] max-w-6xl flex-col px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
         {/* Header */}
         <header className="mb-6 flex flex-col items-center text-center sm:mb-8">
           <span className="flex items-center gap-2 rounded-full bg-sand px-4 py-1.5 text-[0.7rem] uppercase tracking-[0.3em] text-brown-med shadow-soft">
