@@ -105,14 +105,14 @@ export default function PhotoCarousel({ track, onBackToPlaylist }: PhotoCarousel
             </p>
           </div>
         ) : (
-          <AnimatePresence mode="wait">
+          <AnimatePresence initial={false}>
             <motion.div
               key={index}
-              className="absolute inset-0 cursor-pointer"
-              initial={{ opacity: 0, scale: 1.03 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 1.01 }}
-              transition={{ duration: 0.7, ease: 'easeInOut' }}
+              className="absolute inset-0 transform-gpu cursor-pointer will-change-transform"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.5, ease: 'easeInOut' }}
               drag={photoCount > 1 ? 'x' : false}
               dragConstraints={{ left: 0, right: 0 }}
               dragElastic={0.18}
@@ -230,11 +230,13 @@ function Lightbox({ photos, title, index, onIndexChange, onClose }: LightboxProp
 
   return (
     <motion.div
-      className="fixed inset-0 z-50 flex flex-col bg-[#1c130c]/95 backdrop-blur-sm"
+      // Solid background (no backdrop-blur): blurring a fullscreen layer while
+      // a large image animates over it is the #1 cause of choppy mobile swipes.
+      className="fixed inset-0 z-50 flex flex-col bg-[#160f08]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.25 }}
+      transition={{ duration: 0.2 }}
     >
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 pt-[max(1rem,env(safe-area-inset-top))] text-cream">
@@ -256,22 +258,22 @@ function Lightbox({ photos, title, index, onIndexChange, onClose }: LightboxProp
 
       {/* Swipeable stage */}
       <div className="relative flex-1 overflow-hidden">
-        <AnimatePresence custom={direction} initial={false} mode="popLayout">
+        <AnimatePresence custom={direction} initial={false}>
           <motion.div
             key={index}
-            className="absolute inset-0 flex touch-pan-y items-center justify-center p-4"
+            className="absolute inset-0 flex transform-gpu touch-pan-y items-center justify-center p-4 will-change-transform"
             custom={direction}
             variants={slideVariants}
             initial="enter"
             animate="center"
             exit="exit"
             transition={{
-              x: { type: 'spring', stiffness: 320, damping: 34 },
-              opacity: { duration: 0.2 },
+              x: { type: 'tween', duration: 0.32, ease: [0.22, 1, 0.36, 1] },
+              opacity: { duration: 0.18 },
             }}
             drag={count > 1 ? 'x' : false}
             dragConstraints={{ left: 0, right: 0 }}
-            dragElastic={0.25}
+            dragElastic={0.2}
             onDragEnd={(_, info) => {
               const power = info.offset.x + info.velocity.x * 0.2
               if (power < -SWIPE_THRESHOLD) paginate(1)
@@ -394,7 +396,7 @@ function CarouselArrow({
       onClick={onClick}
       aria-label={side === 'left' ? 'Previous photo' : 'Next photo'}
       className={[
-        'absolute top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-cream/85 text-brown-dark shadow-soft backdrop-blur transition-colors hover:bg-cream',
+        'absolute top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-cream/90 text-brown-dark shadow-soft transition-colors hover:bg-cream',
         side === 'left' ? 'left-3' : 'right-3',
       ].join(' ')}
     >
