@@ -5,7 +5,9 @@ import VinylPlayer from './components/VinylPlayer'
 import TrackList from './components/TrackList'
 import PhotoCarousel from './components/PhotoCarousel'
 import Toast from './components/Toast'
+import LoadingScreen from './components/LoadingScreen'
 import { useAudio, type UseAudio } from './hooks/useAudio'
+import { useMediaKeyboard } from './hooks/useMediaKeyboard'
 import { tracks } from './data'
 import type { Track } from './types'
 
@@ -18,6 +20,7 @@ const panelMotion = {
 
 export default function App() {
   const hasTracks = tracks.length > 0
+  const [appReady, setAppReady] = useState(false)
 
   // Stable refs let the once-registered "ended" handler reach fresh values
   // without re-subscribing the audio element each render.
@@ -97,11 +100,36 @@ export default function App() {
   }, [currentTrack])
   nextTrackRef.current = nextTrack
 
+  // Global media keyboard controls (Spacebar, Arrow keys).
+  useMediaKeyboard({
+    onPlayPause: handleToggle,
+    onNextTrack: () => nextTrack && goToTrack(nextTrack),
+    onPrevTrack: () => prevTrack && goToTrack(prevTrack),
+  })
+
   // Mini bar shows on mobile when something is loaded but we're browsing.
   const showMiniBar = currentTrack !== null && browsing
 
+  // Asset preload targets for the loading screen.
+  const firstTrack = tracks[0]
+  const coverArts = tracks.map((t) => t.coverArt)
+  const firstPhotos = firstTrack?.photos || []
+  const firstAudioSrc = firstTrack?.audioSrc || ''
+
   return (
-    <div className="relative min-h-[100dvh] overflow-hidden bg-gradient-to-b from-cream via-cream to-beige-dark/70 lg:h-screen">
+    <>
+      <LoadingScreen
+        onReady={() => setAppReady(true)}
+        coverArt={coverArts}
+        firstPhotos={firstPhotos}
+        firstAudioSrc={firstAudioSrc}
+      />
+      <div
+        className={[
+          'relative min-h-[100dvh] overflow-hidden bg-gradient-to-b from-cream via-cream to-beige-dark/70 lg:h-screen',
+          !appReady ? 'hidden' : '',
+        ].join(' ')}
+      >
       {/* Decorative depth — static blurred orbs, painted once, no per-frame cost */}
       <div
         aria-hidden
@@ -235,7 +263,8 @@ export default function App() {
 
       {/* Non-blocking error toast for audio/playback problems */}
       <Toast message={error} onDismiss={clearError} />
-    </div>
+      </div>
+    </>
   )
 }
 

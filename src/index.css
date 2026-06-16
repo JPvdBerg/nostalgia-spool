@@ -18,6 +18,12 @@ body {
   /* Remove the grey flash when tapping interactive elements on mobile. */
   -webkit-tap-highlight-color: transparent;
   text-rendering: optimizeLegibility;
+  /* Prevent rubber-band overscroll on mobile. */
+  overscroll-behavior-y: none;
+  /* Disable user selection on non-text areas (applies to interactive elements). */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 button {
