@@ -16,17 +16,16 @@ const asset = (path: string): string => `${import.meta.env.BASE_URL}${path}`
 
 export const tracks: Track[] = [
   {
-    id: 'sun-soaked-summers',
-    title: 'Sun-Soaked Summers',
-    era: '1998',
-    artist: 'Backyard Mixtapes',
-    coverArt: asset('images/sun-soaked-summers/cover.jpg'),
-    audioSrc: asset('audio/sun-soaked-summers.mp3'),
+    id: 'wonderful-nothing',
+    title: 'Wonderful Nothing',
+    era: '2020', // TODO: change to the year/era this memory belongs to
+    artist: 'Glass Animals',
+    coverArt: asset('images/wonderful-nothing/cover.jpg'),
+    audioSrc: asset('audio/wonderful-nothing.mp3'),
     photos: [
-      asset('images/sun-soaked-summers/01.jpg'),
-      asset('images/sun-soaked-summers/02.jpg'),
-      asset('images/sun-soaked-summers/03.jpg'),
-      asset('images/sun-soaked-summers/04.jpg'),
+      asset('images/wonderful-nothing/01.jpg'),
+      asset('images/wonderful-nothing/02.jpg'),
+      asset('images/wonderful-nothing/03.jpg'),
     ],
   },
   {
