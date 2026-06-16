@@ -6,6 +6,7 @@ exact paths (they are derived from `id` in `src/data.ts`).
 ## Audio — `public/audio/`
 
 ```
+audio/crackle.mp3            # looping vinyl hiss/crackle (ambient, optional)
 audio/sun-soaked-summers.mp3
 audio/first-snowfall.mp3
 audio/late-night-drives.mp3

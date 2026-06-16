@@ -1,5 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { motion, useMotionValue, useSpring, animate } from 'framer-motion'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from 'react'
+import {
+  motion,
+  useMotionValue,
+  useMotionValueEvent,
+  useSpring,
+  animate,
+  type MotionValue,
+} from 'framer-motion'
 import { Pause, Play, Disc3, Music2, Loader2 } from 'lucide-react'
 import type { Track } from '../types'
 
@@ -9,9 +22,12 @@ interface VinylPlayerProps {
   isLoading?: boolean
   /** Whether playback can be started at all (there is at least one track). */
   canPlay?: boolean
-  currentTime?: number
+  /** Playback position (MotionValue — drives the scrubber without re-renders). */
+  time: MotionValue<number>
   duration?: number
   onSeek?: (time: number) => void
+  /** Live frequency analyser for the reactive glow. */
+  analyser?: MutableRefObject<AnalyserNode | null>
   onToggle: () => void
   /** Tonearm dragged onto the record. */
   onEngage?: () => void
@@ -34,16 +50,16 @@ export default function VinylPlayer({
   isPlaying,
   isLoading = false,
   canPlay = true,
-  currentTime = 0,
+  time,
   duration = 0,
   onSeek,
+  analyser,
   onToggle,
   onEngage,
   onDisengage,
 }: VinylPlayerProps) {
-  // Rotation lives on the parent that holds BOTH the black record and the
-  // centre cover art, so they spin perfectly in sync. Driven by a single
-  // composited transform (GPU) — pausing leaves it exactly where it is.
+  // Rotation lives on the parent that holds BOTH the record and the cover, so
+  // they spin in sync. A single composited transform; no per-frame React state.
   const rotation = useMotionValue(0)
   useEffect(() => {
     if (!isPlaying) return
@@ -56,14 +72,58 @@ export default function VinylPlayer({
     return () => controls.stop()
   }, [isPlaying, rotation])
 
+  // Audio-reactive glow: read the analyser in a rAF loop and push the intensity
+  // into a CSS custom property via a ref. NO React state, NO layout thrash —
+  // only `opacity`/`transform` on a composited layer change.
+  const glowRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const el = glowRef.current
+    if (!el) return
+    if (!isPlaying || !analyser) {
+      el.style.setProperty('--glow', '0')
+      return
+    }
+    let raf = 0
+    let data: Uint8Array<ArrayBuffer> | null = null
+    const tick = () => {
+      const node = analyser.current
+      if (node) {
+        if (!data || data.length !== node.frequencyBinCount) {
+          data = new Uint8Array(new ArrayBuffer(node.frequencyBinCount))
+        }
+        node.getByteFrequencyData(data)
+        // Average the bass/low-mid bins (first third of the spectrum).
+        const bins = Math.max(1, Math.floor(data.length / 3))
+        let sum = 0
+        for (let i = 0; i < bins; i++) sum += data[i]
+        const avg = sum / bins / 255 // 0..1
+        const intensity = Math.min(1, avg * 1.45)
+        el.style.setProperty('--glow', intensity.toFixed(3))
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => {
+      cancelAnimationFrame(raf)
+      el.style.setProperty('--glow', '0')
+    }
+  }, [isPlaying, analyser])
+
   return (
     <div className="flex w-full flex-col items-center gap-5 sm:gap-6">
       {/* Turntable plinth — record size capped by viewport height on desktop */}
       <div className="relative w-full max-w-[17rem] rounded-[2rem] border border-cocoa/15 bg-gradient-to-br from-sand to-beige-dark p-6 shadow-card sm:max-w-sm sm:p-7 lg:max-w-[min(15rem,36vh)] xl:max-w-[min(18rem,40vh)]">
-        {/* Soft warm glow that intensifies while playing — pure opacity, cheap */}
+        {/*
+          Reactive glow — opacity & scale bound to the `--glow` CSS variable that
+          the rAF loop mutates. Composited transform/opacity only.
+        */}
         <div
-          className="pointer-events-none absolute inset-0 rounded-[2rem] bg-[radial-gradient(circle_at_50%_45%,rgba(194,84,43,0.30),transparent_70%)] blur-xl transition-opacity duration-700"
-          style={{ opacity: isPlaying ? 1 : 0 }}
+          ref={glowRef}
+          className="pointer-events-none absolute inset-0 origin-center transform-gpu rounded-[2rem] bg-[radial-gradient(circle_at_50%_45%,rgba(194,149,110,0.9),transparent_70%)] blur-xl will-change-[opacity,transform]"
+          style={{
+            opacity: 'calc(var(--glow, 0) * 0.85)',
+            transform: 'scale(calc(1 + var(--glow, 0) * 0.08))',
+          }}
         />
 
         {/* Tonearm — pinned at its pivot; drag onto the record to play, off to pause */}
@@ -171,26 +231,124 @@ export default function VinylPlayer({
           </motion.button>
         </div>
 
-        {/* Seek bar — only once a track is loaded */}
-        {track && onSeek && (
-          <div className="w-full px-1">
-            <input
-              type="range"
-              min={0}
-              max={duration || 0}
-              step={0.1}
-              value={Math.min(currentTime, duration || 0)}
-              onChange={(e) => onSeek(Number(e.target.value))}
-              disabled={!duration}
-              aria-label="Seek"
-              className="h-1.5 w-full cursor-pointer touch-manipulation appearance-none rounded-full bg-cocoa/25 accent-clay"
-            />
-            <div className="mt-1.5 flex justify-between text-xs tabular-nums text-cocoa">
-              <span>{formatTime(currentTime)}</span>
-              <span>{formatTime(duration)}</span>
-            </div>
-          </div>
-        )}
+        {/* Custom scrubber — only once a track is loaded */}
+        {track && onSeek && <Scrubber time={time} duration={duration} onSeek={onSeek} />}
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Scrubber — ref-driven (no per-timeupdate React state), drag-decoupled */
+/* ------------------------------------------------------------------ */
+
+function Scrubber({
+  time,
+  duration,
+  onSeek,
+}: {
+  time: MotionValue<number>
+  duration: number
+  onSeek: (time: number) => void
+}) {
+  const barRef = useRef<HTMLDivElement>(null)
+  const fillRef = useRef<HTMLDivElement>(null)
+  const thumbRef = useRef<HTMLDivElement>(null)
+  const elapsedRef = useRef<HTMLSpanElement>(null)
+  const durationRef = useRef(duration)
+  durationRef.current = duration
+  const draggingRef = useRef(false)
+  const [dragging, setDragging] = useState(false)
+
+  const paint = useCallback((pct: number) => {
+    const p = Math.max(0, Math.min(100, pct))
+    if (fillRef.current) fillRef.current.style.width = `${p}%`
+    if (thumbRef.current) thumbRef.current.style.left = `${p}%`
+  }, [])
+
+  // Music position → bar, straight to the DOM. Ignored while the user drags so
+  // the thumb never fights the pointer.
+  useMotionValueEvent(time, 'change', (t) => {
+    if (elapsedRef.current) elapsedRef.current.textContent = formatTime(t)
+    if (!draggingRef.current && durationRef.current > 0) {
+      paint((t / durationRef.current) * 100)
+    }
+  })
+
+  const pctFromPointer = useCallback((clientX: number) => {
+    const el = barRef.current
+    if (!el) return 0
+    const r = el.getBoundingClientRect()
+    return ((clientX - r.left) / r.width) * 100
+  }, [])
+
+  const previewAt = useCallback(
+    (pct: number) => {
+      paint(pct)
+      if (elapsedRef.current && durationRef.current > 0) {
+        elapsedRef.current.textContent = formatTime((pct / 100) * durationRef.current)
+      }
+    },
+    [paint],
+  )
+
+  const handleDown = useCallback(
+    (e: React.PointerEvent) => {
+      if (durationRef.current <= 0) return
+      draggingRef.current = true
+      setDragging(true)
+      barRef.current?.setPointerCapture(e.pointerId)
+      previewAt(pctFromPointer(e.clientX))
+    },
+    [pctFromPointer, previewAt],
+  )
+
+  const handleMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!draggingRef.current) return
+      previewAt(pctFromPointer(e.clientX))
+    },
+    [pctFromPointer, previewAt],
+  )
+
+  const handleUp = useCallback(
+    (e: React.PointerEvent) => {
+      if (!draggingRef.current) return
+      draggingRef.current = false
+      setDragging(false)
+      barRef.current?.releasePointerCapture?.(e.pointerId)
+      if (durationRef.current > 0) {
+        onSeek((pctFromPointer(e.clientX) / 100) * durationRef.current)
+      }
+    },
+    [onSeek, pctFromPointer],
+  )
+
+  return (
+    <div className="w-full select-none px-1">
+      <div
+        ref={barRef}
+        onPointerDown={handleDown}
+        onPointerMove={handleMove}
+        onPointerUp={handleUp}
+        onPointerCancel={handleUp}
+        className="relative flex h-4 cursor-pointer touch-none items-center"
+      >
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-cocoa/25">
+          <div ref={fillRef} className="h-full rounded-full bg-clay" style={{ width: '0%' }} />
+        </div>
+        <div
+          ref={thumbRef}
+          style={{ left: '0%' }}
+          className={[
+            'absolute h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-clay shadow transition-transform',
+            dragging ? 'scale-125' : '',
+          ].join(' ')}
+        />
+      </div>
+      <div className="mt-1.5 flex justify-between text-xs tabular-nums text-cocoa">
+        <span ref={elapsedRef}>0:00</span>
+        <span>{formatTime(duration)}</span>
       </div>
     </div>
   )
@@ -240,8 +398,6 @@ function Tonearm({
   onDisengage?: () => void
 }) {
   const boxRef = useRef<HTMLDivElement>(null)
-  // `target` is set imperatively; `rotation` is a spring that follows it so the
-  // arm eases to its resting state on release instead of snapping instantly.
   const target = useMotionValue(isPlaying ? ARM_ON : ARM_OFF)
   const rotation = useSpring(target, { stiffness: 240, damping: 26, mass: 0.5 })
 
@@ -250,8 +406,6 @@ function Tonearm({
   const startAngle = useRef(0)
   const startRot = useRef(0)
 
-  // Pivot = centre of the pivot disc (~80% across, ~12% down the box).
-  // Recomputed on resize/scroll so the angle math never drifts.
   const computePivot = useCallback(() => {
     const el = boxRef.current
     if (!el) return
@@ -269,13 +423,11 @@ function Tonearm({
     }
   }, [computePivot])
 
-  // Follow playback when the user isn't holding the arm.
   useEffect(() => {
     if (interacting.current) return
     target.set(isPlaying ? ARM_ON : ARM_OFF)
   }, [isPlaying, target])
 
-  // Idle nudge — a gentle periodic wiggle while paused to signal interactivity.
   useEffect(() => {
     if (isPlaying) return
     const id = window.setInterval(() => {

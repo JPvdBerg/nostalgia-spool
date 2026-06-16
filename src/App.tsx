@@ -37,9 +37,10 @@ export default function App() {
     isPlaying,
     isLoading,
     error,
-    currentTime,
+    time,
     duration,
     seek,
+    analyser,
     selectTrack,
     play,
     pause,
@@ -143,9 +144,10 @@ export default function App() {
               isPlaying={isPlaying}
               isLoading={isLoading}
               canPlay={hasTracks}
-              currentTime={currentTime}
+              time={time}
               duration={duration}
               onSeek={seek}
+              analyser={analyser}
               onToggle={handleToggle}
               onEngage={handleEngage}
               onDisengage={handleDisengage}

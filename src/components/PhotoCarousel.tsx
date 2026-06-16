@@ -1,5 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react'
+import { AnimatePresence, motion, useScroll, useTransform } from 'framer-motion'
 import {
   ChevronDown,
   ChevronLeft,
@@ -14,7 +21,6 @@ import {
 } from 'lucide-react'
 import type { Track } from '../types'
 import Swiper from './Swiper'
-import { useMediaQuery } from '../hooks/useMediaQuery'
 
 interface PhotoCarouselProps {
   track: Track
@@ -42,11 +48,6 @@ export default function PhotoCarousel({
   const [isPaused, setIsPaused] = useState(false)
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const photoCount = track.photos.length
-
-  // Inline carousel is always horizontal so the page can still scroll
-  // vertically on mobile. The fullscreen lightbox swipes vertically on phones.
-  const isMobile = useMediaQuery('(max-width: 640px)')
-  const lightboxAxis = isMobile ? 'y' : 'x'
 
   useEffect(() => {
     setIndex(0)
@@ -226,7 +227,6 @@ export default function PhotoCarousel({
             photos={track.photos}
             title={track.title}
             index={index}
-            axis={lightboxAxis}
             onIndexChange={setIndex}
             onClose={() => setLightboxOpen(false)}
           />
@@ -237,39 +237,65 @@ export default function PhotoCarousel({
 }
 
 /* ------------------------------------------------------------------ */
-/* Fullscreen lightbox — self-paced, Instagram-style swiping.          */
+/* Fullscreen lightbox — vertical "tossed scrapbook" scroll.           */
 /* ------------------------------------------------------------------ */
 
 interface LightboxProps {
   photos: string[]
   title: string
   index: number
-  axis: 'x' | 'y'
   onIndexChange: (i: number) => void
   onClose: () => void
 }
 
-function Lightbox({ photos, title, index, axis, onIndexChange, onClose }: LightboxProps) {
+function Lightbox({ photos, title, index, onIndexChange, onClose }: LightboxProps) {
   const count = photos.length
   const dialogRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [active, setActive] = useState(index)
   const [showHint, setShowHint] = useState(count > 1)
-  const dismissHint = useCallback(() => setShowHint(false), [])
 
-  const handleIndexChange = useCallback(
-    (i: number) => {
-      setShowHint(false)
-      onIndexChange(i)
-    },
-    [onIndexChange],
+  // Stable, slightly-random resting tilt per photo (recomputed only if count
+  // changes) — the "tossed on a table" look.
+  const rests = useMemo(
+    () => photos.map(() => (Math.random() * 8 - 4) + (Math.random() > 0.5 ? 1.5 : -1.5)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [count],
   )
 
-  const go = useCallback(
-    (dir: number) => {
-      setShowHint(false)
-      onIndexChange(Math.max(0, Math.min(count - 1, index + dir)))
-    },
-    [count, index, onIndexChange],
-  )
+  const scrollToIndex = useCallback((i: number, smooth = true) => {
+    const root = scrollRef.current
+    const el = root?.querySelector<HTMLElement>(`[data-index="${i}"]`)
+    el?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' })
+  }, [])
+
+  // Jump to the photo the user tapped, on open (instant).
+  useEffect(() => {
+    scrollToIndex(index, false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Track the centred photo with an IntersectionObserver (fires on snap, not
+  // per frame) — drives the dots, counter, and hint without onScroll state.
+  useEffect(() => {
+    const root = scrollRef.current
+    if (!root) return
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting && e.intersectionRatio >= 0.6) {
+            const i = Number((e.target as HTMLElement).dataset.index)
+            setActive(i)
+            onIndexChange(i)
+            if (i !== 0) setShowHint(false)
+          }
+        }
+      },
+      { root, threshold: [0.6] },
+    )
+    root.querySelectorAll('[data-index]').forEach((el) => io.observe(el))
+    return () => io.disconnect()
+  }, [count, onIndexChange])
 
   // Auto-retire the hint after a few seconds even if untouched.
   useEffect(() => {
@@ -294,8 +320,6 @@ function Lightbox({ photos, title, index, axis, onIndexChange, onClose }: Lightb
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') return onClose()
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') return go(-1)
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') return go(1)
       if (e.key === 'Tab') {
         const items = getFocusable()
         if (items.length === 0) return
@@ -315,7 +339,7 @@ function Lightbox({ photos, title, index, axis, onIndexChange, onClose }: Lightb
       window.removeEventListener('keydown', onKey)
       prevFocus?.focus?.()
     }
-  }, [onClose, go])
+  }, [onClose])
 
   return (
     <motion.div
@@ -330,11 +354,11 @@ function Lightbox({ photos, title, index, axis, onIndexChange, onClose }: Lightb
       transition={{ duration: 0.18 }}
     >
       {/* Top bar */}
-      <div className="flex items-center justify-between px-4 pt-[max(1rem,env(safe-area-inset-top))] text-cream">
+      <div className="z-10 flex items-center justify-between px-4 pt-[max(1rem,env(safe-area-inset-top))] text-cream">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">{title}</p>
           <p className="text-xs text-cream/70">
-            {index + 1} / {count}
+            {active + 1} / {count}
           </p>
         </div>
         <button
@@ -347,75 +371,104 @@ function Lightbox({ photos, title, index, axis, onIndexChange, onClose }: Lightb
         </button>
       </div>
 
-      {/* Swipeable stage */}
-      <div className="relative flex-1 overflow-hidden">
-        <Swiper
-          count={count}
-          index={index}
-          axis={axis}
-          onIndexChange={handleIndexChange}
-          onInteractStart={dismissHint}
-          renderSlide={(i) => (
-            <div className="flex h-full items-center justify-center p-4">
-              <LightboxImage src={photos[i]} alt={`${title} — photo ${i + 1}`} />
-            </div>
-          )}
-        />
-
-        {/* Desktop arrows (mobile uses vertical swipe) */}
-        {count > 1 && (
-          <>
-            <LightboxArrow side="left" disabled={index === 0} onClick={() => go(-1)} />
-            <LightboxArrow side="right" disabled={index === count - 1} onClick={() => go(1)} />
-          </>
-        )}
-
-        {/* Swipe affordance — bouncing chevron + label, fades on first move */}
-        <AnimatePresence>
-          {showHint && count > 1 && (
-            <motion.div
-              key="hint"
-              className="pointer-events-none absolute inset-x-0 bottom-6 flex flex-col items-center gap-1 text-cream"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            >
-              <span className="rounded-full bg-cream/10 px-3 py-1 text-xs font-medium tracking-wide backdrop-blur-sm">
-                Swipe to explore
-              </span>
-              <motion.div
-                animate={axis === 'y' ? { y: [0, 9, 0] } : { x: [0, 9, 0] }}
-                transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
-              >
-                {axis === 'y' ? (
-                  <ChevronDown className="h-6 w-6 drop-shadow" />
-                ) : (
-                  <ChevronRight className="h-6 w-6 drop-shadow" />
-                )}
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+      {/* Vertical scroll-snap scrapbook */}
+      <div
+        ref={scrollRef}
+        className="relative min-h-0 flex-1 snap-y snap-mandatory overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch] [scrollbar-width:none]"
+      >
+        {photos.map((src, i) => (
+          <ScrapbookPhoto
+            key={i}
+            index={i}
+            src={src}
+            alt={`${title} — photo ${i + 1}`}
+            rest={rests[i]}
+            container={scrollRef}
+          />
+        ))}
       </div>
 
-      {/* Dots */}
+      {/* Scroll affordance — bouncing chevron, fades once you move */}
+      <AnimatePresence>
+        {showHint && count > 1 && (
+          <motion.div
+            key="hint"
+            className="pointer-events-none absolute inset-x-0 bottom-16 z-10 flex flex-col items-center gap-1 text-cream"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <span className="rounded-full bg-cream/10 px-3 py-1 text-xs font-medium tracking-wide backdrop-blur-sm">
+              Scroll to explore
+            </span>
+            <motion.div
+              animate={{ y: [0, 9, 0] }}
+              transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+            >
+              <ChevronDown className="h-6 w-6 drop-shadow" />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Dots — click to jump */}
       {count > 1 && (
-        <div className="flex items-center justify-center gap-2 px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3">
+        <div className="z-10 flex items-center justify-center gap-2 px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3">
           {photos.map((_, i) => (
             <button
               key={i}
               type="button"
               aria-label={`Go to photo ${i + 1}`}
-              onClick={() => onIndexChange(i)}
+              onClick={() => scrollToIndex(i)}
               className={[
                 'h-2.5 rounded-full transition-all duration-300',
-                i === index ? 'w-7 bg-clay' : 'w-2.5 bg-cream/40 hover:bg-cream/70',
+                i === active ? 'w-7 bg-clay' : 'w-2.5 bg-cream/40 hover:bg-cream/70',
               ].join(' ')}
             />
           ))}
         </div>
       )}
     </motion.div>
+  )
+}
+
+/** One scrapbook photo: scroll-linked tilt + scale, flat & large at centre. */
+function ScrapbookPhoto({
+  index,
+  src,
+  alt,
+  rest,
+  container,
+}: {
+  index: number
+  src: string
+  alt: string
+  rest: number
+  container: RefObject<HTMLElement>
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const { scrollYProgress } = useScroll({
+    target: ref,
+    container,
+    offset: ['start end', 'end start'],
+  })
+  // 0 = entering from below, 0.5 = dead centre, 1 = leaving up top.
+  const rotate = useTransform(scrollYProgress, [0, 0.5, 1], [rest, 0, -rest])
+  const scale = useTransform(scrollYProgress, [0, 0.5, 1], [0.88, 1.04, 0.88])
+
+  return (
+    <div
+      ref={ref}
+      data-index={index}
+      className="flex h-full snap-center items-center justify-center p-6"
+    >
+      <motion.div
+        style={{ rotate, scale }}
+        className="flex h-full w-full transform-gpu items-center justify-center will-change-transform"
+      >
+        <LightboxImage src={src} alt={alt} />
+      </motion.div>
+    </div>
   )
 }
 
@@ -514,32 +567,6 @@ function CarouselArrow({
       ].join(' ')}
     >
       <Icon className="h-5 w-5" />
-    </button>
-  )
-}
-
-function LightboxArrow({
-  side,
-  onClick,
-  disabled,
-}: {
-  side: 'left' | 'right'
-  onClick: () => void
-  disabled?: boolean
-}) {
-  const Icon = side === 'left' ? ChevronLeft : ChevronRight
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={side === 'left' ? 'Previous photo' : 'Next photo'}
-      className={[
-        'absolute top-1/2 hidden h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-cream/10 text-cream transition-all hover:bg-cream/20 disabled:pointer-events-none disabled:opacity-0 sm:flex',
-        side === 'left' ? 'left-3' : 'right-3',
-      ].join(' ')}
-    >
-      <Icon className="h-6 w-6" />
     </button>
   )
 }

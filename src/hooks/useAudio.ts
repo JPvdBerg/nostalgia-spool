@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react'
+import { useMotionValue, type MotionValue } from 'framer-motion'
 import type { Track } from '../types'
 
 /** Player status, surfaced so the UI can show spinners and friendly errors. */
@@ -15,12 +16,18 @@ export interface UseAudio {
   status: AudioStatus
   /** A human-friendly error message, or null when healthy. */
   error: string | null
-  /** Current playback position in seconds. */
-  currentTime: number
+  /**
+   * Current playback position in seconds as a MotionValue. It updates on the
+   * audio element's `timeupdate` WITHOUT triggering React renders, so the UI
+   * can bind to it (scrubber, time label) at 60fps with zero re-renders.
+   */
+  time: MotionValue<number>
   /** Track duration in seconds (0 until metadata loads). */
   duration: number
   /** Jump to a position (seconds). */
   seek: (time: number) => void
+  /** Live frequency analyser for the music (null until the graph is built). */
+  analyser: MutableRefObject<AnalyserNode | null>
   /** Load a track and start it from the beginning, cleanly stopping any previous track. */
   selectTrack: (track: Track) => void
   /** Load a track into the player *without* playing (e.g. restoring last session). */
@@ -54,33 +61,46 @@ function describeMediaError(audio: HTMLAudioElement, track: Track | null): strin
   }
 }
 
+/** Volume for the ambient vinyl crackle — sits underneath the music. */
+const CRACKLE_VOLUME = 0.15
+
 /**
- * Owns the single, long-lived HTML5 <audio> element for the whole app.
- *
- * Only ever one Audio object exists, so switching tracks cannot produce
- * overlapping playback: we `pause()` + reset the element, swap `src`, call
- * `load()` to drop the previous track's buffered data, then `play()`.
+ * Owns the single, long-lived HTML5 <audio> element for the whole app, plus an
+ * ambient crackle loop and a Web Audio analyser for the reactive glow.
  */
 export function useAudio(options: { onEnded?: () => void } = {}): UseAudio {
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  // Keep a ref to the loaded track so event listeners can build good messages.
+  const crackleRef = useRef<HTMLAudioElement | null>(null)
   const trackRef = useRef<Track | null>(null)
-  // Latest onEnded callback, so the once-mounted listener never goes stale.
   const onEndedRef = useRef(options.onEnded)
   onEndedRef.current = options.onEnded
+
+  // Web Audio graph (built lazily on the first user-initiated play).
+  const audioCtxRef = useRef<AudioContext | null>(null)
+  const sourceRef = useRef<MediaElementAudioSourceNode | null>(null)
+  const analyserRef = useRef<AnalyserNode | null>(null)
 
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
 
-  // Create the audio element once and wire up lifecycle listeners.
+  // Playback position as a MotionValue — never causes a React render.
+  const time = useMotionValue(0)
+
+  // Create the audio + crackle elements once and wire up lifecycle listeners.
   useEffect(() => {
     const audio = new Audio()
     audio.preload = 'auto'
+    audio.crossOrigin = 'anonymous'
     audioRef.current = audio
+
+    const crackle = new Audio(`${import.meta.env.BASE_URL}audio/crackle.mp3`)
+    crackle.loop = true
+    crackle.preload = 'auto'
+    crackle.volume = CRACKLE_VOLUME
+    crackleRef.current = crackle
 
     const handlePlay = () => {
       setIsPlaying(true)
@@ -98,7 +118,7 @@ export function useAudio(options: { onEnded?: () => void } = {}): UseAudio {
       setIsLoading(false)
     }
     const handleCanPlay = () => setIsLoading(false)
-    const handleTimeUpdate = () => setCurrentTime(audio.currentTime)
+    const handleTimeUpdate = () => time.set(audio.currentTime)
     const handleDuration = () =>
       setDuration(Number.isFinite(audio.duration) ? audio.duration : 0)
     const handleError = () => {
@@ -119,7 +139,7 @@ export function useAudio(options: { onEnded?: () => void } = {}): UseAudio {
     audio.addEventListener('error', handleError)
 
     return () => {
-      // Tear down completely so no audio survives an unmount.
+      // Strict teardown — no audio, nodes, or contexts survive unmount.
       audio.pause()
       audio.removeEventListener('play', handlePlay)
       audio.removeEventListener('playing', handlePlaying)
@@ -134,34 +154,92 @@ export function useAudio(options: { onEnded?: () => void } = {}): UseAudio {
       audio.removeAttribute('src')
       audio.load()
       audioRef.current = null
+
+      crackle.pause()
+      crackle.removeAttribute('src')
+      crackle.load()
+      crackleRef.current = null
+
+      try {
+        sourceRef.current?.disconnect()
+        analyserRef.current?.disconnect()
+      } catch {
+        /* nodes may already be gone */
+      }
+      sourceRef.current = null
+      analyserRef.current = null
+      void audioCtxRef.current?.close()
+      audioCtxRef.current = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Build the Web Audio graph once, on a user-initiated play (autoplay policy).
+  const ensureGraph = useCallback(() => {
+    const audio = audioRef.current
+    if (!audio || audioCtxRef.current) return
+    try {
+      const Ctx: typeof AudioContext =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext })
+          .webkitAudioContext
+      const ctx = new Ctx()
+      const source = ctx.createMediaElementSource(audio)
+      const analyser = ctx.createAnalyser()
+      analyser.fftSize = 256
+      analyser.smoothingTimeConstant = 0.8
+      // music → analyser → speakers
+      source.connect(analyser)
+      analyser.connect(ctx.destination)
+      audioCtxRef.current = ctx
+      sourceRef.current = source
+      analyserRef.current = analyser
+    } catch {
+      /* Analyser is a nice-to-have; audio still plays without the graph. */
     }
   }, [])
 
-  const seek = useCallback((time: number) => {
-    const audio = audioRef.current
-    if (!audio) return
-    audio.currentTime = time
-    setCurrentTime(time)
-  }, [])
+  // Ambient crackle follows the music's play/pause (independent of track).
+  useEffect(() => {
+    const crackle = crackleRef.current
+    if (!crackle) return
+    if (isPlaying) void crackle.play().catch(() => {})
+    else crackle.pause()
+  }, [isPlaying])
+
+  const seek = useCallback(
+    (to: number) => {
+      const audio = audioRef.current
+      if (!audio) return
+      audio.currentTime = to
+      time.set(to)
+    },
+    [time],
+  )
 
   /** Shared play() that translates rejected promises into useful errors. */
-  const attemptPlay = useCallback((audio: HTMLAudioElement) => {
-    void audio.play().catch((err: unknown) => {
-      setIsPlaying(false)
-      setIsLoading(false)
-      const name = err instanceof DOMException ? err.name : ''
-      if (name === 'NotAllowedError') {
-        setError('Your browser blocked autoplay. Tap the play button to start.')
-      } else if (name === 'NotSupportedError') {
-        const file = trackRef.current ? `audio/${trackRef.current.id}.mp3` : 'this track'
-        setError(`Couldn't play ${file}. Make sure the MP3 has been added.`)
-      } else if (audio.error) {
-        setError(describeMediaError(audio, trackRef.current))
-      } else {
-        setError('Playback failed. Please try again.')
-      }
-    })
-  }, [])
+  const attemptPlay = useCallback(
+    (audio: HTMLAudioElement) => {
+      ensureGraph()
+      void audioCtxRef.current?.resume()
+      void audio.play().catch((err: unknown) => {
+        setIsPlaying(false)
+        setIsLoading(false)
+        const name = err instanceof DOMException ? err.name : ''
+        if (name === 'NotAllowedError') {
+          setError('Your browser blocked autoplay. Tap the play button to start.')
+        } else if (name === 'NotSupportedError') {
+          const file = trackRef.current ? `audio/${trackRef.current.id}.mp3` : 'this track'
+          setError(`Couldn't play ${file}. Make sure the MP3 has been added.`)
+        } else if (audio.error) {
+          setError(describeMediaError(audio, trackRef.current))
+        } else {
+          setError('Playback failed. Please try again.')
+        }
+      })
+    },
+    [ensureGraph],
+  )
 
   const play = useCallback(() => {
     const audio = audioRef.current
@@ -186,23 +264,18 @@ export function useAudio(options: { onEnded?: () => void } = {}): UseAudio {
       const audio = audioRef.current
       if (!audio) return
 
-      // Cleanly stop whatever is currently playing before touching `src`.
       audio.pause()
       setError(null)
       setIsLoading(true)
 
-      // IMPORTANT: set the source *synchronously*, inside the click handler,
-      // BEFORE calling play(). Doing this in a setState updater would run it
-      // during render — after play() had already fired on an empty element,
-      // which rejects and consumes the user gesture (no autoplay).
-      // We compare against the ref (not state) to keep this self-contained.
+      // Set the source synchronously inside the gesture, before play().
       if (trackRef.current?.id !== track.id) {
         audio.src = track.audioSrc
         audio.load()
       }
       trackRef.current = track
       setCurrentTrack(track)
-      setCurrentTime(0)
+      time.set(0)
       setDuration(0)
 
       try {
@@ -212,21 +285,24 @@ export function useAudio(options: { onEnded?: () => void } = {}): UseAudio {
       }
       attemptPlay(audio)
     },
-    [attemptPlay],
+    [attemptPlay, time],
   )
 
-  const loadTrack = useCallback((track: Track) => {
-    const audio = audioRef.current
-    if (!audio) return
-    if (trackRef.current?.id !== track.id) {
-      audio.src = track.audioSrc
-      audio.load()
-    }
-    trackRef.current = track
-    setCurrentTrack(track)
-    setCurrentTime(0)
-    setDuration(0)
-  }, [])
+  const loadTrack = useCallback(
+    (track: Track) => {
+      const audio = audioRef.current
+      if (!audio) return
+      if (trackRef.current?.id !== track.id) {
+        audio.src = track.audioSrc
+        audio.load()
+      }
+      trackRef.current = track
+      setCurrentTrack(track)
+      time.set(0)
+      setDuration(0)
+    },
+    [time],
+  )
 
   const stop = useCallback(() => {
     const audio = audioRef.current
@@ -235,14 +311,15 @@ export function useAudio(options: { onEnded?: () => void } = {}): UseAudio {
       audio.removeAttribute('src')
       audio.load()
     }
+    crackleRef.current?.pause()
     trackRef.current = null
     setCurrentTrack(null)
     setIsPlaying(false)
     setIsLoading(false)
     setError(null)
-    setCurrentTime(0)
+    time.set(0)
     setDuration(0)
-  }, [])
+  }, [time])
 
   const clearError = useCallback(() => setError(null), [])
 
@@ -262,9 +339,10 @@ export function useAudio(options: { onEnded?: () => void } = {}): UseAudio {
     isLoading,
     status,
     error,
-    currentTime,
+    time,
     duration,
     seek,
+    analyser: analyserRef,
     selectTrack,
     loadTrack,
     play,
