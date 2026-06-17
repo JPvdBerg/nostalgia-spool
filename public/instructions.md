@@ -1,62 +1,52 @@
-Context & Tech Stack
+System Role & Objective
+You are a Lead UI/UX Engineer specializing in immersive, brutalist, mobile-first interfaces. Your objective is to dramatically enhance the tactile and visual fidelity of the nostalgia-spool frontend without introducing any new features, backend dependencies, or scope creep. The goal is to make the application feel like a responsive, high-fidelity hardware terminal.
 
-Target Files/Directory: [Insert directory path, e.g., ./src/components and ./src/styles]
+Execution Directives: The "Tactile Terminal" Refactor
+Audit the current codebase and implement the following UX/UI enhancements:
 
-Framework/Stack: [Insert stack, e.g., React, TailwindCSS, Next.js]
+When a song is chosen, the focus of the site must shift to the photos, and a carasoul of the photos in fullscreen mode must be able to be entered when the user decides to click on the newly photo-centric ui
 
-Primary Issue: The layout breaks on mobile viewports (under 768px). Elements overlap, scaling is incorrect, and the UI/UX does not feel native or intuitive on touch devices.
+also, the initial state of the page must fit in a single view port on desktop. Also reduce the need for scrolling as much as possible for mobile
 
-Execution Directives: The "Mobile-First" Mandate
-Do not attempt to patch the desktop layout to fit mobile screens. You must ensure the base styling targets mobile devices first, progressively enhancing for larger screens using standard breakpoints. Execute the following refactoring checklist:
+1. Diegetic Visual Polish (Retro-Futurism):
 
-1. Structural Layout & Overflow:
+Implement a subtle, CSS-only CRT scanline overlay across the viewport using a repeating linear gradient. It must not interfere with touch targets or clickability (use pointer-events: none).
 
-Identify and eliminate any hard-coded, fixed widths (e.g., width: 800px) causing horizontal scrolling. Replace them with fluid layouts (width: 100%, max-width, Flexbox, or CSS Grid).
+Add a subtle text-shadow "glow" exclusively to active or terminal-green elements (like the SYSTEM_ONLINE indicator) to simulate phosphor screens.
 
-Fix any overlapping absolute-positioned elements that break on smaller viewports.
+Make the SYSTEM_ONLINE indicator pulse gently.
 
-2. Touch Targets & Accessibility (UX):
+2. Mechanical Button Physics (Micro-interactions):
 
-Ensure all interactive elements (buttons, links, navigation icons) have a minimum touch target size of 44x44 pixels.
+Refactor all interactive buttons (EXECUTE_PLAY, PRV, NXT, and archive list items) to have aggressive, instantaneous active states.
 
-Add adequate spacing (padding/margin) between interactive elements to prevent misclicks.
+When pressed/tapped, buttons should physically depress (e.g., transform: translateY(4px)) and their brutalist box-shadows must compress to simulate a mechanical switch being bottomed out. Remove all smooth transition times for these transforms; the feedback must be instantaneous and punchy.
 
-3. Typography & Scaling:
+3. System Log Typing Effect:
 
-Implement fluid typography or adjust mobile font sizes to ensure readability without zooming.
+Modify the SYS_LOG component. When new logs are pushed to this container, they must not appear instantly. Implement a lightweight typewriter effect so text renders character-by-character at a rapid, terminal-like speed.
 
-Ensure proper line height (minimum 1.5) and text wrapping within containers.
+Include a standard ASCII spinner (e.g., | / - \) for any asynchronous loading states.
 
-4. Navigation & Forms:
+4. Mobile-First Layout Optimization:
 
-If applicable, convert desktop-style navigation (e.g., horizontal top bars) into a mobile-friendly alternative (e.g., a bottom tab bar or a clean hamburger menu).
+Ensure the OS_PLAYER_01 playback controls utilize a sticky or fixed positioning strategy on mobile viewports (e.g., docking to the bottom edge) so the user can scroll through the DB_ARCHIVE without losing access to play/pause functionality.
 
-Ensure form inputs zoom correctly on iOS/Android (font size must be at least 16px to prevent auto-zoom) and utilize appropriate mobile keyboards (e.g., type="email" or type="number").
+Implement touch-swipe event listeners on the media player container: swipe left triggers NXT, swipe right triggers PRV.
 
-Required Output & Git Commands
+Strict Constraints:
 
-Review the code and implement the necessary layout and UI fixes autonomously.
+ZERO Scope Creep: Do not alter the backend, do not create new databases, and do not invent new application features. Restrict all work to CSS, HTML structure, and frontend JS logic.
 
-Refactor the CSS/styling to enforce the mobile-first hierarchy.
+Performance: The visual effects (scanlines, glow) must be hardware-accelerated and highly optimized. Do not cause UI lag. Keep the code architecture clean enough for enterprise-grade deployment.
 
-Once the layout is responsive and verified, execute the following commands to commit the fixes:
+Aesthetic Adherence: Maintain the strict monospace typography, high-contrast orange/dark-charcoal color blocking, and sharp, border-radius-zero geometry.
+
+Version Control Sequence:
+Once the refinements are implemented and tested on mobile dimensions, execute the following commands autonomously from the root directory:
 
 git add .
 
-git commit -m "fix: refactor UI/UX for strict mobile-first responsiveness and accessibility"
+git commit -m "chore(ui): implement tactile micro-interactions, CRT shaders, and sticky mobile player UX"
 
-git push origin [Insert Branch Name, e.g., main]
-
-Constraints:
-
-Do not alter the underlying backend logic or database schemas; constrain your fixes entirely to the presentation layer.
-
-Maintain the existing brand identity and color palette while optimizing the spacing and structure.
-
-this app is meant to focus on the memories of a past relationship, therefor the image gallery MUST be fronty and center when a song plays
-
-Each song will have x amount of photos attached to it
-
-please add the cover photo for the song playing to the record in the center like a real record and have it spin with the record and have it change for each song
-
-Have all photos load on first load and store them in local storage, have a in-theme loading screen appear and gatekeep entrance until all photos have loaded and have entered local storage, this is to prevent constant calls to the same image
+git push origin [Insert Current Branch]
