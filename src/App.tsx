@@ -1,454 +1,271 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { animate, AnimatePresence, motion, useMotionValue, useMotionTemplate } from 'framer-motion'
-import { Disc3, Pause, Play, Sparkles } from 'lucide-react'
-import VinylPlayer from './components/VinylPlayer'
-import TrackList from './components/TrackList'
-import PhotoCarousel from './components/PhotoCarousel'
-import Toast from './components/Toast'
-import LoadingScreen from './components/LoadingScreen'
-import { useAudio, type UseAudio } from './hooks/useAudio'
-import { useMediaKeyboard } from './hooks/useMediaKeyboard'
+import { useEffect, useMemo, useState, useRef } from 'react'
+import { motion, useMotionValueEvent } from 'framer-motion'
+import { useAudio } from './hooks/useAudio'
 import { tracks } from './data'
 import type { Track } from './types'
 
-const panelMotion = {
-  initial: { opacity: 0, y: 12 },
-  animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -12 },
-  transition: { duration: 0.3, ease: 'easeOut' as const },
+function formatTime(s: number) {
+  if (!s || !Number.isFinite(s)) return "0:00";
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
 export default function App() {
-  const hasTracks = tracks.length > 0
-  const [appReady, setAppReady] = useState(false)
-  const handleReady = useCallback(() => setAppReady(true), [])
-  const [unlockedTracks, setUnlockedTracks] = useState<Set<string>>(new Set())
-  // Title of a just-unlocked hidden track, for the celebratory toast.
-  const [unlockedTitle, setUnlockedTitle] = useState<string | null>(null)
+  const [logs, setLogs] = useState<string[]>([
+    `[${new Date().toLocaleTimeString()}] System sequence initiated...`,
+    `[${new Date().toLocaleTimeString()}] Loading binary...`,
+    `[${new Date().toLocaleTimeString()}] Fetching era metadata...`,
+  ]);
 
-  // Dynamic background colour (defaults to cream). The base gradient is a soft
-  // top-down wash; the reactive vignette (below) makes the track's colour bloom
-  // prominently from the edges and pulse to the kick / bassline.
-  const bgColor = useMotionValue('#F6EAD2')
-  // Bold theme-colour bleed: solid from ~55% radius outward (covers well over
-  // half the page), with only a small clear core so the centred content stays
-  // legible. Opacity-only (driven by `--bass`) so the kick-drum pulse is a
-  // compositor-only change that never repaints.
-  const bgVignette = useMotionTemplate`radial-gradient(115% 95% at 50% 45%, transparent 15%, ${bgColor} 55%)`
-  const bassRef = useRef<HTMLDivElement>(null)
+  const addLog = (msg: string) => {
+    setLogs(prev => [...prev.slice(-10), `[${new Date().toLocaleTimeString()}] ${msg}`]);
+  };
 
-  // Stable refs let the once-registered "ended" handler reach fresh values
-  // without re-subscribing the audio element each render.
-  const apiRef = useRef<UseAudio | null>(null)
-  const nextTrackRef = useRef<Track | undefined>(undefined)
+  const audio = useAudio({
+    onEnded: () => {
+      addLog("Playback sequence complete.");
+      const currentIndex = tracks.findIndex(t => t.id === currentTrack?.id);
+      if (currentIndex !== -1 && currentIndex < tracks.length - 1) {
+        selectTrack(tracks[currentIndex + 1]);
+      }
+    }
+  });
 
-  const handleEnded = useCallback(() => {
-    // Roll on to the next track when one finishes (stays put on the last).
-    const next = nextTrackRef.current
-    if (next) apiRef.current?.selectTrack(next)
-  }, [])
-
-  const audio = useAudio({ onEnded: handleEnded })
-  apiRef.current = audio
   const {
     currentTrack,
     isPlaying,
     isLoading,
-    error,
     time,
     duration,
-    seek,
-    analyser,
     selectTrack,
-    play,
-    pause,
     toggle,
-    clearError,
-  } = audio
+    status
+  } = audio;
 
-  // `browsing` shows the playlist while audio keeps playing (decoupled from stop).
-  const [browsing, setBrowsing] = useState(false)
+  const [currentTimeStr, setCurrentTimeStr] = useState("0:00");
+  const [durationStr, setDurationStr] = useState("0:00");
 
-  const showCarousel = currentTrack !== null && !browsing
+  useMotionValueEvent(time, "change", (latest) => {
+    setCurrentTimeStr(formatTime(latest));
+  });
 
-  const handleToggle = () => {
-    if (currentTrack) toggle()
-    else if (hasTracks) {
-      selectTrack(tracks[0])
-      setBrowsing(false)
-    }
-  }
-
-  // Tonearm dropped onto the record → start playing (first track if none yet).
-  const handleEngage = () => {
-    if (currentTrack) play()
-    else if (hasTracks) {
-      selectTrack(tracks[0])
-      setBrowsing(false)
-    }
-  }
-  // Tonearm lifted off the record → pause.
-  const handleDisengage = () => pause()
-
-  // Selecting from the list: same track just re-opens its photos (no restart).
-  const handleSelect = (track: Track) => {
-    if (track.id === currentTrack?.id) setBrowsing(false)
-    else {
-      selectTrack(track)
-      setBrowsing(false)
-    }
-  }
-
-  const goToTrack = (track: Track) => {
-    selectTrack(track)
-    setBrowsing(false)
-  }
-
-  // Adjacent tracks for the prev/next buttons (memoized — doesn't recompute
-  // while the record spins, only when the track changes).
-  const { prevTrack, nextTrack } = useMemo(() => {
-    const i = currentTrack ? tracks.findIndex((t) => t.id === currentTrack.id) : -1
-    return {
-      prevTrack: i > 0 ? tracks[i - 1] : undefined,
-      nextTrack: i >= 0 && i < tracks.length - 1 ? tracks[i + 1] : undefined,
-    }
-  }, [currentTrack])
-  nextTrackRef.current = nextTrack
-
-  // Global media keyboard controls. Space always toggles playback; the arrows
-  // skip tracks ONLY when the photo carousel isn't open — while it is, the
-  // carousel owns ←/→ for photo navigation (otherwise both would fire at once).
-  useMediaKeyboard({
-    onPlayPause: handleToggle,
-    onNextTrack: showCarousel ? undefined : () => nextTrack && goToTrack(nextTrack),
-    onPrevTrack: showCarousel ? undefined : () => prevTrack && goToTrack(prevTrack),
-  })
-
-  // Unlock a hidden track and play it immediately (via easter egg).
-  const unlockAndPlay = useCallback(
-    (track: Track) => {
-      setUnlockedTracks((prev) => new Set([...prev, track.id]))
-      setUnlockedTitle(track.title)
-      selectTrack(track)
-      setBrowsing(false)
-    },
-    [selectTrack],
-  )
-
-  // Auto-retire the "B-side unlocked" toast.
   useEffect(() => {
-    if (!unlockedTitle) return
-    const id = window.setTimeout(() => setUnlockedTitle(null), 4000)
-    return () => window.clearTimeout(id)
-  }, [unlockedTitle])
+    setDurationStr(formatTime(duration));
+  }, [duration]);
 
-  // Animate background color on track change (1.5s soft bleed).
   useEffect(() => {
-    const targetColor = currentTrack?.themeColor || '#F6EAD2'
-    void animate(bgColor, targetColor, {
-      duration: 1.5,
-      ease: 'easeInOut',
-    })
-  }, [currentTrack, bgColor])
+    if (currentTrack) {
+      addLog(`Loading track: ${currentTrack.title}`);
+    }
+  }, [currentTrack]);
 
-  // Drive a `--bass` CSS variable (0..1) from the low end of the spectrum so the
-  // colour vignette blooms on every kick / bass note. Ref + rAF only, so this
-  // never triggers a React render (keeps 60fps and the Web Audio graph intact).
   useEffect(() => {
-    const el = bassRef.current
-    if (!el) return
-    // Respect reduced-motion (and remove any strobe risk): hold a calm, static
-    // tint rather than pulsing at all.
-    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    if (!isPlaying || !analyser || reduceMotion) {
-      el.style.setProperty('--bass', '0')
-      return
-    }
-    let raf = 0
-    let data: Uint8Array<ArrayBuffer> | null = null
+    if (status === 'playing') addLog("Audio stream engaged.");
+    if (status === 'paused') addLog("Audio stream halted.");
+    if (status === 'error') addLog("CRITICAL ERROR: Stream corruption detected.");
+  }, [status]);
 
-    // A shaped pulse re-triggered on each kick: swell IN, briefly HOLD at the
-    // top, then drop OUT quickly — then wait for the next kick. Every stage is a
-    // smooth ramp (no instant flashes), driven by the track's live low end.
-    let env = 0
-    let prev = 0
-    let phase: 'idle' | 'in' | 'hold' | 'out' = 'idle'
-    let holdUntil = 0
-    const TRIGGER = 0.4 // low-end level that fires a new pulse
-    const IN = 0.16 // attack ease — the slow, sexy swell up
-    const OUT = 0.32 // release ease — the quick drop back down
-    const HOLD_MS = 130 // brief sustain at the peak
+  const [clock, setClock] = useState(new Date().toLocaleTimeString());
+  useEffect(() => {
+    const timer = setInterval(() => setClock(new Date().toLocaleTimeString()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
-    const tick = (now: number) => {
-      const node = analyser.current
-      if (node) {
-        if (!data || data.length !== node.frequencyBinCount) {
-          data = new Uint8Array(new ArrayBuffer(node.frequencyBinCount))
-        }
-        node.getByteFrequencyData(data)
-        // Kick + low bass live in the bottom ~3 bins (fftSize 256 → ~172 Hz each).
-        const sum = data[0] + data[1] + data[2]
-        let level = (sum / 3 / 255 - 0.05) / 0.95
-        level = Math.min(1, Math.max(0, level))
-
-        // Kick onset = a rising edge above the trigger, only re-armed once we're
-        // idle or already dropping out → "IN, hold, out, (wait), IN".
-        if (level > TRIGGER && level > prev + 0.04 && (phase === 'idle' || phase === 'out')) {
-          phase = 'in'
-        }
-        prev = level
-
-        if (phase === 'in') {
-          env += (1 - env) * IN
-          if (env > 0.9) {
-            phase = 'hold'
-            holdUntil = now + HOLD_MS
-          }
-        } else if (phase === 'hold') {
-          env += (1 - env) * IN // pin near the top
-          if (now >= holdUntil) phase = 'out'
-        } else if (phase === 'out') {
-          env += (0 - env) * OUT
-          if (env < 0.03) {
-            env = 0
-            phase = 'idle'
-          }
-        } else {
-          env += (0 - env) * 0.08 // settle to the baseline tint
-        }
-        el.style.setProperty('--bass', env.toFixed(3))
-      }
-      raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => {
-      cancelAnimationFrame(raf)
-      el.style.setProperty('--bass', '0')
-    }
-  }, [isPlaying, analyser])
-
-  // Mini bar shows on mobile when something is loaded but we're browsing.
-  const showMiniBar = currentTrack !== null && browsing
-
-  // Preload EVERY image up front (covers + all photos) so switching tracks never
-  // shows a loading flash, and keep the first track's audio warm. Memoized for a
-  // stable identity so the preloader effect runs exactly once.
-  const firstTrack = tracks[0]
-  const allImages = useMemo(
-    () =>
-      tracks.flatMap((t) => [
-        t.coverArt,
-        ...t.photos.map((p) => (typeof p === 'string' ? p : p.src)),
-      ]),
-    [],
-  )
-  const firstAudioSrc = firstTrack?.audioSrc || ''
+  const progressPct = duration > 0 ? (time.get() / duration) * 100 : 0;
 
   return (
-    <>
-      <LoadingScreen
-        onReady={handleReady}
-        images={allImages}
-        firstAudioSrc={firstAudioSrc}
-      />
-      <motion.div
-        className={[
-          'relative min-h-[100dvh] overflow-hidden bg-gradient-to-b from-cream via-cream to-[#E8D7B3] lg:h-screen',
-          !appReady ? 'hidden' : '',
-        ].join(' ')}
-      >
-      {/* Reactive colour bleed — the track's theme colour blooms from the edges
-          and pulses to the kick / bassline via the `--bass` variable. Sits behind
-          all content; the clear centre keeps text crisp. Opacity-only (no scale or
-          blur) so the pulse is compositor-only and never repaints. */}
-      <motion.div
-        ref={bassRef}
-        aria-hidden
-        className="pointer-events-none absolute inset-0 will-change-[opacity]"
-        style={{
-          backgroundImage: bgVignette,
-          opacity: 'calc(0.42 + var(--bass, 0) * 0.36)',
-        }}
-      />
+    <div className="flex flex-col h-screen bg-[#1a1a1a] text-[#e5e5e5] font-sans overflow-hidden">
+      {/* TOP HEADER */}
+      <header className="h-12 bg-black border-b-2 border-[#404040] flex items-center justify-between px-4 z-50">
+        <div className="flex items-center gap-3">
+          <span className="mono text-[#ff5722] font-black text-base">NS_SPOOL //</span>
+          <span className="mono text-xs">VER_6.17.2026</span>
+        </div>
+        <div className="flex gap-5">
+          <div className="bg-[#262626] border border-[#404040] px-2 py-0.5 text-[10px] uppercase tracking-widest flex items-center gap-1.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-[#4ade80]"></div>
+            <span className="mono">System_Online</span>
+          </div>
+          <div className="mono text-xs">{clock}</div>
+        </div>
+      </header>
 
-      <div
-        className={[
-          'relative mx-auto flex min-h-[100dvh] max-w-6xl flex-col px-4 py-5 sm:px-6 sm:py-7 lg:h-screen lg:min-h-0 lg:overflow-hidden lg:px-8 lg:py-5',
-          showMiniBar ? 'pb-28 lg:pb-5' : '',
-        ].join(' ')}
-      >
-        {/* Header */}
-        <header className="mb-5 flex flex-col items-center text-center lg:mb-4">
-          <span className="flex items-center gap-2 rounded-full bg-espresso px-4 py-1.5 text-[0.7rem] font-semibold uppercase tracking-[0.3em] text-cream shadow-soft">
-            <Disc3 className="h-4 w-4" />
-            A Music Timeline
-          </span>
-          <h1 className="mt-3 text-3xl font-semibold text-espresso sm:text-4xl lg:mt-2 lg:text-5xl">
-            Nostalgia Spool
-          </h1>
-          <p className="mt-1.5 max-w-md text-sm text-cocoa sm:text-base">
-            Drop the needle on a memory and watch the photos drift by.
-          </p>
-        </header>
+      <div className="flex flex-1 overflow-hidden">
+        {/* LEFT COLUMN: DB_ARCHIVE */}
+        <aside className="w-80 border-r-2 border-[#404040] bg-[#111] flex flex-col">
+          <div className="p-4 border-b-2 border-[#404040] bg-[#262626]">
+            <span className="mono text-xs font-bold">DB_ARCHIVE // {String(tracks.length).padStart(2, '0')}_ENTRIES</span>
+          </div>
+          <ul className="flex-1 overflow-y-auto">
+            {tracks.map((track, i) => (
+              <li 
+                key={track.id}
+                onClick={() => selectTrack(track)}
+                className={`p-4 border-b border-[#404040] cursor-pointer transition-colors group relative
+                  ${currentTrack?.id === track.id ? 'bg-[#ff5722] text-black border-l-4 border-l-white' : 'hover:bg-[#222]'}`}
+              >
+                <div className="flex justify-between mb-1 mono text-[10px]">
+                  <span>#{String(i + 1).padStart(2, '0')}</span>
+                  <span className={currentTrack?.id === track.id ? 'text-black' : 'text-[#ff5722]'}>{track.era}</span>
+                </div>
+                <h3 className="text-sm font-extrabold uppercase truncate">{track.title}</h3>
+                {currentTrack?.id === track.id && isPlaying && (
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 flex gap-0.5 items-end h-3">
+                    <motion.div animate={{ height: [4, 12, 6] }} transition={{ repeat: Infinity, duration: 0.5 }} className="w-1 bg-black" />
+                    <motion.div animate={{ height: [8, 4, 10] }} transition={{ repeat: Infinity, duration: 0.6 }} className="w-1 bg-black" />
+                    <motion.div animate={{ height: [6, 10, 4] }} transition={{ repeat: Infinity, duration: 0.4 }} className="w-1 bg-black" />
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </aside>
 
-        {/* Split layout: vinyl left, content right (stacks on mobile) */}
-        <main className="grid flex-1 grid-cols-1 items-center gap-6 lg:min-h-0 lg:grid-cols-2 lg:auto-rows-fr lg:items-stretch lg:gap-10 lg:overflow-hidden">
-          <section className="flex items-center justify-center lg:min-h-0">
-            <VinylPlayer
-              track={currentTrack}
-              isPlaying={isPlaying}
-              isLoading={isLoading}
-              canPlay={hasTracks}
-              time={time}
-              duration={duration}
-              onSeek={seek}
-              analyser={analyser}
-              onToggle={handleToggle}
-              onEngage={handleEngage}
-              onDisengage={handleDisengage}
-              onLongPressCentre={() => {
-                const hiddenTrack = tracks.find((t) => t.isHidden && !unlockedTracks.has(t.id))
-                if (hiddenTrack) unlockAndPlay(hiddenTrack)
-              }}
-            />
+        {/* MAIN CONTENT AREA */}
+        <main className="flex-1 overflow-y-auto p-10 grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-10 bg-[radial-gradient(#404040_1px,transparent_0)] [background-size:40px_40px]">
+          
+          {/* CENTER: PLAYER */}
+          <section className="flex flex-col gap-6">
+            <div className="panel">
+              <div className="panel-label">OS_PLAYER_01</div>
+              <div className="w-full aspect-video bg-black border-2 border-[#404040] flex items-center justify-center relative overflow-hidden group">
+                <div className="absolute inset-0 opacity-30 pointer-events-none bg-[repeating-linear-gradient(45deg,#111,#111_2px,transparent_2px,transparent_10px)]" />
+                
+                <motion.div 
+                  animate={{ rotate: isPlaying ? 360 : 0 }}
+                  transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+                  className="w-64 h-64 sm:w-80 sm:h-80 rounded-full bg-[radial-gradient(circle_at_center,#333_0%,#111_100%)] border-4 border-black shadow-2xl relative flex items-center justify-center z-10"
+                >
+                  <div className="absolute inset-[10px] rounded-full border border-white/5 pointer-events-none" />
+                  <div className="w-24 h-24 rounded-full bg-[#ff5722] text-black flex flex-col items-center justify-center text-center font-black z-20">
+                    <span className="mono text-xs">{currentTrack ? String(tracks.findIndex(t => t.id === currentTrack.id) + 1).padStart(3, '0') : '000'}</span>
+                    <span className="text-[10px] tracking-[0.2em]">{currentTrack?.era || '----'}</span>
+                  </div>
+                </motion.div>
+              </div>
+
+              {/* Scrubber */}
+              <div className="mt-3 h-10 bg-black border-2 border-black relative cursor-pointer" onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const pct = x / rect.width;
+                audio.seek(pct * duration);
+              }}>
+                <motion.div 
+                  className="h-full bg-[#ff5722]"
+                  style={{ width: `${progressPct}%` }}
+                />
+                <div className="absolute top-1/2 left-3 -translate-y-1/2 mix-blend-difference font-bold mono text-xs text-white">
+                  {currentTimeStr} / {durationStr}
+                </div>
+              </div>
+
+              {/* Controls */}
+              <div className="flex gap-[2px] bg-black border-2 border-black">
+                <button 
+                  onClick={() => {
+                    const idx = tracks.findIndex(t => t.id === currentTrack?.id);
+                    if (idx > 0) selectTrack(tracks[idx - 1]);
+                  }}
+                  className="flex-1 bg-[#262626] border-none text-white p-4 mono font-bold hover:bg-[#333] active:bg-[#ff5722] active:text-black transition-colors"
+                >
+                  PRV
+                </button>
+                <button 
+                  onClick={toggle}
+                  className="flex-[2] bg-[#ff5722] text-black border-none p-4 mono font-bold hover:opacity-90 active:bg-white transition-colors"
+                >
+                  {isPlaying ? 'HALT_PLAYBACK' : 'EXECUTE_PLAY'}
+                </button>
+                <button 
+                  onClick={() => {
+                    const idx = tracks.findIndex(t => t.id === currentTrack?.id);
+                    if (idx < tracks.length - 1) selectTrack(tracks[idx + 1]);
+                  }}
+                  className="flex-1 bg-[#262626] border-none text-white p-4 mono font-bold hover:bg-[#333] active:bg-[#ff5722] active:text-black transition-colors"
+                >
+                  NXT
+                </button>
+              </div>
+            </div>
+
+            {/* TRACK INFO */}
+            <div className="panel">
+              <div className="panel-label">MD_DATA_STREAM</div>
+              <div className="flex justify-between items-baseline">
+                <h1 className="text-3xl font-black uppercase truncate">{currentTrack?.title || 'NO_TRACK_LOADED'}</h1>
+                <span className="mono text-[#ff5722] font-bold">ERA_{currentTrack?.era || '----'}</span>
+              </div>
+              <p className="text-[#a3a3a3] uppercase tracking-widest mb-5">{currentTrack?.artist || 'UNKNOWN_SOURCE'}</p>
+              
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <div className="border border-[#404040] p-2 bg-[#1a1a1a]">
+                  <label className="text-[9px] text-[#a3a3a3] uppercase block">Bitrate</label>
+                  <span className="text-xs font-bold mono">320 KBPS</span>
+                </div>
+                <div className="border border-[#404040] p-2 bg-[#1a1a1a]">
+                  <label className="text-[9px] text-[#a3a3a3] uppercase block">Format</label>
+                  <span className="text-xs font-bold mono">MPEG_L3</span>
+                </div>
+                <div className="border border-[#404040] p-2 bg-[#1a1a1a]">
+                  <label className="text-[9px] text-[#a3a3a3] uppercase block">Source</label>
+                  <span className="text-xs font-bold mono">MASTER_TAPE</span>
+                </div>
+                <div className="border border-[#404040] p-2 bg-[#1a1a1a]">
+                  <label className="text-[9px] text-[#a3a3a3] uppercase block">Status</label>
+                  <span className="text-xs font-bold mono text-[#ff5722]">ENCRYPTED</span>
+                </div>
+              </div>
+            </div>
           </section>
 
-          <section className="min-h-[22rem] lg:min-h-0 lg:overflow-hidden">
-            {hasTracks ? (
-              <AnimatePresence mode="wait" initial={false}>
-                {showCarousel && currentTrack ? (
-                  <motion.div key="carousel" className="h-full" {...panelMotion}>
-                    <PhotoCarousel
-                      track={currentTrack}
-                      time={time}
-                      onBackToPlaylist={() => setBrowsing(true)}
-                      onPrevTrack={prevTrack ? () => goToTrack(prevTrack) : undefined}
-                      prevTrackTitle={prevTrack?.title}
-                      onNextTrack={nextTrack ? () => goToTrack(nextTrack) : undefined}
-                      nextTrackTitle={nextTrack?.title}
+          {/* RIGHT COLUMN: IMAGES & LOGS */}
+          <section className="flex flex-col gap-6">
+            <div className="panel">
+              <div className="panel-label">IMG_REPOSITORY</div>
+              <div className="grid grid-cols-3 gap-2 mt-4">
+                {currentTrack?.photos.map((photo, i) => (
+                  <div key={i} className="aspect-square bg-black border border-[#404040] overflow-hidden group">
+                    <img 
+                      src={typeof photo === 'string' ? photo : photo.src} 
+                      className="w-full h-full object-cover grayscale contrast-125 hover:grayscale-0 transition-all duration-300" 
+                      alt="" 
                     />
-                  </motion.div>
-                ) : (
-                  <motion.div key="tracklist" className="h-full" {...panelMotion}>
-                    <TrackList
-                      tracks={tracks.filter((t) => !t.isHidden || unlockedTracks.has(t.id))}
-                      activeTrackId={currentTrack?.id ?? null}
-                      onSelect={handleSelect}
-                    />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            ) : (
-              <EmptyLibrary />
-            )}
+                  </div>
+                )) || Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="aspect-square bg-black border border-[#404040] p-2 flex flex-col justify-between">
+                    <span className="mono text-[8px] text-[#ff5722]">ERR_404</span>
+                    <div className="flex-1 flex items-center justify-center opacity-20">
+                      <div className="w-4 h-4 border border-white rotate-45" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="panel flex-1">
+              <div className="panel-label">SYS_LOG</div>
+              <div className="mono text-[10px] leading-relaxed flex flex-col gap-1 overflow-hidden h-full">
+                {logs.map((log, i) => (
+                  <div key={i} className={log.includes('CRITICAL') ? 'text-[#ff5722]' : ''}>
+                    {log}
+                  </div>
+                ))}
+                <div className="blink">_</div>
+              </div>
+            </div>
           </section>
         </main>
-
-        <footer className="mt-6 text-center text-sm text-cocoa lg:mt-4">
-          Made with warm tape hiss &amp; soft focus · {new Date().getFullYear()}
-        </footer>
       </div>
 
-      {/* Mobile mini now-playing bar — tap to return to the photos */}
-      <AnimatePresence>
-        {showMiniBar && currentTrack && (
-          <motion.div
-            initial={{ y: 80, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 80, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-            className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:hidden"
-          >
-            <div className="mx-auto flex max-w-md items-center gap-3 rounded-2xl border border-cocoa/20 bg-espresso px-3 py-2 text-cream shadow-soft-lg">
-              <button
-                type="button"
-                onClick={() => setBrowsing(false)}
-                className="flex min-w-0 flex-1 items-center gap-3 text-left"
-                aria-label="Back to photos"
-              >
-                <MiniCover key={currentTrack.id} src={currentTrack.coverArt} />
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-semibold">
-                    {currentTrack.title}
-                  </span>
-                  <span className="block truncate text-xs text-cream/70">
-                    {currentTrack.artist}
-                  </span>
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={handleToggle}
-                aria-label={isPlaying ? 'Pause' : 'Play'}
-                className="flex h-10 w-10 shrink-0 touch-manipulation items-center justify-center rounded-full bg-clay text-cream transition-colors hover:bg-clay-dark"
-              >
-                {isPlaying ? (
-                  <Pause className="h-5 w-5" fill="currentColor" />
-                ) : (
-                  <Play className="ml-0.5 h-5 w-5" fill="currentColor" />
-                )}
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Celebratory toast when the hidden B-side is unlocked */}
-      <AnimatePresence>
-        {unlockedTitle && (
-          <motion.div
-            key="unlock"
-            initial={{ y: -40, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: -40, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 320, damping: 28 }}
-            className="pointer-events-none fixed inset-x-0 top-[max(1rem,env(safe-area-inset-top))] z-[60] flex justify-center px-4"
-          >
-            <div className="pointer-events-auto flex items-center gap-2 rounded-full bg-espresso px-4 py-2 text-cream shadow-soft-lg">
-              <Sparkles className="h-4 w-4 text-clay" />
-              <span className="text-sm font-semibold">B-side unlocked · {unlockedTitle}</span>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Non-blocking error toast for audio/playback problems */}
-      <Toast message={error} onDismiss={clearError} />
-      </motion.div>
-    </>
-  )
-}
-
-/** Tiny cover thumbnail for the mini bar, with a graceful fallback. */
-function MiniCover({ src }: { src: string }) {
-  const [errored, setErrored] = useState(false)
-  if (errored) {
-    return (
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-cocoa">
-        <Disc3 className="h-5 w-5 text-cream/70" />
-      </span>
-    )
-  }
-  return (
-    <img
-      src={src}
-      alt=""
-      onError={() => setErrored(true)}
-      className="h-10 w-10 shrink-0 rounded-lg object-cover"
-    />
-  )
-}
-
-/** Shown if the tracklist is ever empty (e.g. data.ts cleared). */
-function EmptyLibrary() {
-  return (
-    <div className="flex h-full min-h-[24rem] flex-col items-center justify-center rounded-3xl border border-cocoa/15 bg-sand p-8 text-center shadow-card">
-      <Disc3 className="h-12 w-12 text-clay" strokeWidth={1.5} />
-      <h2 className="mt-4 text-xl font-semibold text-espresso">No memories yet</h2>
-      <p className="mt-1 max-w-xs text-sm text-cocoa">
-        Add some tracks to <code className="font-mono">src/data.ts</code> to start building
-        your timeline.
-      </p>
+      {/* FOOTER */}
+      <footer className="h-8 bg-black border-t-2 border-[#404040] flex items-center px-4 font-mono text-[10px] text-[#a3a3a3]">
+        <span className="flex gap-2">
+          <span>ROOT@NS_SPOOL:~$</span>
+          <span className="text-white">NOSTALGIA_SEQUENCER --ACTIVE --DEBUG=OFF</span>
+        </span>
+      </footer>
     </div>
   )
 }
