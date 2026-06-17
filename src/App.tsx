@@ -157,7 +157,10 @@ export default function App() {
   useEffect(() => {
     const el = bassRef.current
     if (!el) return
-    if (!isPlaying || !analyser) {
+    // Respect reduced-motion (and remove any strobe risk): hold a calm, static
+    // tint rather than pulsing at all.
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    if (!isPlaying || !analyser || reduceMotion) {
       el.style.setProperty('--bass', '0')
       return
     }
@@ -174,10 +177,10 @@ export default function App() {
         // Kick + low bass live in the bottom ~3 bins (fftSize 256 → ~172 Hz each).
         const sum = data[0] + data[1] + data[2]
         let level = sum / 3 / 255
-        // Aggressive floor + gain so a kick slams the value straight to full.
-        level = Math.min(1, Math.max(0, (level - 0.04) / 0.96) * 2.2)
-        // Instant attack, fast decay toward 0 → a hard, distinct thump per kick.
-        env = level > env ? level : env * 0.84
+        level = Math.min(1, Math.max(0, (level - 0.05) / 0.95) * 1.6)
+        // Ease toward the level (a touch quicker to rise than fall) so the bleed
+        // BREATHES with the beat — smooth ramps, never an instant flash.
+        env += (level - env) * (level > env ? 0.12 : 0.06)
         el.style.setProperty('--bass', env.toFixed(3))
       }
       raf = requestAnimationFrame(tick)
@@ -229,7 +232,7 @@ export default function App() {
         className="pointer-events-none absolute inset-0 will-change-[opacity]"
         style={{
           backgroundImage: bgVignette,
-          opacity: 'calc(0.25 + var(--bass, 0) * 0.75)',
+          opacity: 'calc(0.42 + var(--bass, 0) * 0.3)',
         }}
       />
 

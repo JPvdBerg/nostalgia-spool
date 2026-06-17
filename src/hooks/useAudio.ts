@@ -187,9 +187,9 @@ export function useAudio(options: { onEnded?: () => void } = {}): UseAudio {
       const source = ctx.createMediaElementSource(audio)
       const analyser = ctx.createAnalyser()
       analyser.fftSize = 256
-      // Low smoothing keeps kick-drum transients sharp so the reactive bleed
-      // pulses tightly in time with the music (high smoothing mutes the kicks).
-      analyser.smoothingTimeConstant = 0.45
+      // Moderate smoothing: still tracks the beat, but without the per-frame
+      // jitter that made the reactive bleed strobe.
+      analyser.smoothingTimeConstant = 0.6
       // music → analyser → speakers
       source.connect(analyser)
       analyser.connect(ctx.destination)
