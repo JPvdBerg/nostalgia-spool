@@ -193,7 +193,7 @@ export default function PhotoCarousel({
           `perspective` property only affects children), and `preserve-3d` keeps
           both faces in the same 3D space so back-face culling works. */}
       <motion.div
-        className="relative min-h-0 flex-1"
+        className="relative min-h-[22rem] flex-1 lg:min-h-0"
         style={{ transformStyle: 'preserve-3d', transformPerspective: 1200 }}
         animate={{ rotateY: showingNotes ? 180 : 0 }}
         transition={{ type: 'spring', stiffness: 320, damping: 32, mass: 0.7 }}
