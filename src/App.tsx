@@ -165,9 +165,21 @@ export default function App() {
       return
     }
     let raf = 0
-    let env = 0
     let data: Uint8Array<ArrayBuffer> | null = null
-    const tick = () => {
+
+    // A shaped pulse re-triggered on each kick: swell IN, briefly HOLD at the
+    // top, then drop OUT quickly — then wait for the next kick. Every stage is a
+    // smooth ramp (no instant flashes), driven by the track's live low end.
+    let env = 0
+    let prev = 0
+    let phase: 'idle' | 'in' | 'hold' | 'out' = 'idle'
+    let holdUntil = 0
+    const TRIGGER = 0.4 // low-end level that fires a new pulse
+    const IN = 0.16 // attack ease — the slow, sexy swell up
+    const OUT = 0.32 // release ease — the quick drop back down
+    const HOLD_MS = 130 // brief sustain at the peak
+
+    const tick = (now: number) => {
       const node = analyser.current
       if (node) {
         if (!data || data.length !== node.frequencyBinCount) {
@@ -176,11 +188,34 @@ export default function App() {
         node.getByteFrequencyData(data)
         // Kick + low bass live in the bottom ~3 bins (fftSize 256 → ~172 Hz each).
         const sum = data[0] + data[1] + data[2]
-        let level = sum / 3 / 255
-        level = Math.min(1, Math.max(0, (level - 0.05) / 0.95) * 1.6)
-        // Ease toward the level (a touch quicker to rise than fall) so the bleed
-        // BREATHES with the beat — smooth ramps, never an instant flash.
-        env += (level - env) * (level > env ? 0.12 : 0.06)
+        let level = (sum / 3 / 255 - 0.05) / 0.95
+        level = Math.min(1, Math.max(0, level))
+
+        // Kick onset = a rising edge above the trigger, only re-armed once we're
+        // idle or already dropping out → "IN, hold, out, (wait), IN".
+        if (level > TRIGGER && level > prev + 0.04 && (phase === 'idle' || phase === 'out')) {
+          phase = 'in'
+        }
+        prev = level
+
+        if (phase === 'in') {
+          env += (1 - env) * IN
+          if (env > 0.9) {
+            phase = 'hold'
+            holdUntil = now + HOLD_MS
+          }
+        } else if (phase === 'hold') {
+          env += (1 - env) * IN // pin near the top
+          if (now >= holdUntil) phase = 'out'
+        } else if (phase === 'out') {
+          env += (0 - env) * OUT
+          if (env < 0.03) {
+            env = 0
+            phase = 'idle'
+          }
+        } else {
+          env += (0 - env) * 0.08 // settle to the baseline tint
+        }
         el.style.setProperty('--bass', env.toFixed(3))
       }
       raf = requestAnimationFrame(tick)
@@ -232,7 +267,7 @@ export default function App() {
         className="pointer-events-none absolute inset-0 will-change-[opacity]"
         style={{
           backgroundImage: bgVignette,
-          opacity: 'calc(0.42 + var(--bass, 0) * 0.3)',
+          opacity: 'calc(0.42 + var(--bass, 0) * 0.36)',
         }}
       />
 
