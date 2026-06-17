@@ -1,50 +1,52 @@
 System Role & Objective
-You are an expert Creative Developer and UI/UX Designer specializing in Neo-Brutalism, WebGL, and retro-terminal interfaces. Your objective is to aggressively overhaul the frontend visual language of the application referenced in "image_3735aa.jpg". The current layout is too sterile, flat, and lacks character. You must inject raw brutalist aesthetics, high-impact interactivity, and "charm" without breaking the existing backend integration or mobile responsiveness.
+You are a Lead Mobile Frontend Engineer and Creative Technologist. Your objective is to implement a suite of mobile-first, tactile micro-interactions into the nostalgia-spool frontend. You must abandon all desktop paradigms (like hover states or keyboard shortcuts) and focus exclusively on touch mechanics, device APIs, and thumb-friendly ergonomics. The app must feel like a heavy, responsive piece of portable hardware.
 
-Execution Directives: The "Raw Iron" Overhaul
-Analyze the current codebase and implement the following stylistic and interactive refactors:
+Execution Directives: The "Mobile Machine" Update
+Audit the frontend architecture and implement the following features without altering the existing backend infrastructure at C:\Users\drunk\Documents\nostalgia-spool:
 
-1. Aggressive Styling & Neo-Brutalist Foundations:
+1. Haptics & Diegetic Feedback (The Touch Layer):
 
-Thick Borders & Hard Shadows: Replace all thin borders with thick, harsh lines (e.g., border: 3px solid #1A1A1A or pure black, depending on the background contrast). Every panel (MD_DATA_STREAM, IMG_REPO) must have a hard, unblurred drop shadow (e.g., box-shadow: 6px 6px 0px #FF4500 or another jarring accent color) to make them pop off the background.
+Vibration API: Implement navigator.vibrate() for touch events. Add a heavy haptic response (e.g., 50ms) to primary controls like EXECUTE_PLAY and HALT. Add micro-haptics (10ms) to list items in the DB_ARCHIVE. Fail gracefully on iOS devices that do not support this API.
 
-Color Inversion & High Contrast: Introduce a stark, aggressive accent color (like absolute cyan, neon yellow, or radioactive orange). Use this color for borders, active states, and selection highlights.
+Phosphor Touch Impact: Remove any custom cursors. Implement a global touchstart event listener. When the screen is tapped, spawn a sharp, 0px border-radius div (a phosphor block) at the clientX/clientY coordinates that expands and fades out within 200ms.
 
-Typography: Mix the existing monospace font with a dramatically oversized, blocky sans-serif (like Impact or a web-safe equivalent) for major headers like "WONDERFUL NOTHING".
+Hardware Mute Toggle: Add a brutalist toggle switch to the top header. When toggled off, mute all diegetic UI sound effects (if implemented) but maintain the haptic feedback.
 
-2. High-Fidelity Interactivity & "Charm":
+2. The Radial Command Menu (Ergonomics):
 
-Violent Hover States: When hovering over clickable items in the DB_ARCHIVE or the player controls, the reaction must be instantaneous and harsh. Invert the foreground and background colors entirely. Add a slight, rapid X/Y axis translation (a 2px shift) so the element physically "jumps" when interacted with.
+Implement a global contextmenu or long-press (touchstart with a 500ms delay) event.
 
-Glitch/Flicker Effects: Add a CSS-only glitch or RGB-split effect that triggers randomly every 10-15 seconds on the SYSTEM_ONLINE text or when a new track loads.
+Triggering this must dim the background and render a stark, brutalist radial menu (similar to a gaming "weapon wheel") centered exactly at the user's touch coordinates.
 
-Marquee Text: If a track name in the DB_ARCHIVE or MD_DATA_STREAM is too long, do not truncate it with an ellipsis. Instead, implement a continuous, smooth CSS marquee scroll.
+The wheel must contain quick actions (e.g., Next Track, Previous Track, Clear Logs). Releasing the touch over a slice executes the command.
 
-3. Terminal Authenticity (Data Stream Panel):
+3. Responsive Terminal Visuals:
 
-The MD_DATA_STREAM log at the bottom left currently looks static. Animate this. When new logs appear, they must flash briefly (like a cursor block) before rendering the text.
+Responsive ASCII Progress: Refactor the media player progress bar to an ASCII text string ([████░░░░]). Write logic to dynamically set the maximum character length of this string based on the active mobile viewport width, ensuring it never wraps to a second line.
 
-Add a subtle, animated ASCII visualizer or a blocky, CSS-grid-based audio equalizer next to the track name that pulses (even if randomly simulated on the frontend) while the track is in a "PLAY" state.
+Safe-Area Notifications: Implement a notification system for track changes. These brutalist toast notifications must slide down from the top of the screen. You MUST use CSS env(safe-area-inset-top) to ensure the notification clears mobile hardware notches/camera cutouts.
 
-4. Image Repo Treatment:
+Interruptible Boot: Add a simulated 1.5-second terminal boot sequence on initial page load. Crucially, attach a touchstart listener to the overlay that allows the user to instantly bypass the sequence and access the UI.
 
-The images in IMG_REPO are currently too clean. Apply a CSS filter to them: filter: grayscale(100%) contrast(150%).
+4. Swipe Architecture:
 
-On hover, the images should instantly snap to full color with a harsh, blocky border wrapping them.
+Ensure the OS_PLAYER_01 is permanently fixed to the bottom of the viewport.
+
+Implement touch swipe logic (touchstart and touchend delta calculations) allowing the user to seamlessly swipe horizontally between the DB_ARCHIVE list, the IMG_REPO, and the SYS_LOG.
 
 Strict Constraints:
 
-No Structural Destruction: You must maintain the current underlying HTML grid/flexbox architecture and ensure the mobile-first logic previously implemented remains perfectly intact.
+Mobile-First Exclusivity: Ensure all active states trigger on :active or touch events, not :hover.
 
-Performance: All animations (marquee, hover states) must use transform and opacity to ensure 60fps hardware acceleration.
+Performance: Do not block the main thread with heavy JS animations. Use CSS transitions for the radial menu and touch impacts.
 
-Logic Preservation: Do not alter the existing Git configuration or backend fetch logic.
+Styling: Maintain the stark, unrounded, heavy-border brutalist styling.
 
 Version Control Sequence:
-Once the brutalist overhaul is complete and tested locally, execute the following:
+Execute the following commands upon successful local implementation and testing:
 
 git add .
 
-git commit -m "feat(ui): implement aggressive neo-brutalist styling, hard shadows, and micro-interactions"
+git commit -m "feat(mobile): implement haptic feedback, radial touch menu, and mobile-first gesture architecture"
 
-git push origin [Insert Current Branch]
+git push origin main
