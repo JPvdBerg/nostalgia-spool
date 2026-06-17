@@ -4,6 +4,13 @@ import { useAudio } from './hooks/useAudio'
 import { tracks } from './data'
 import LoadingScreen from './components/LoadingScreen'
 
+function formatTime(s: number) {
+  if (!s || !Number.isFinite(s)) return "0:00";
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
 // --- Helper Components ---
 
 const TypewriterText = ({ text, onComplete }: { text: string; onComplete?: () => void }) => {
@@ -25,7 +32,6 @@ const TypewriterText = ({ text, onComplete }: { text: string; onComplete?: () =>
 
   return <span>{displayedText}</span>;
 };
-
 const FullscreenCarousel = ({ track, onClose }: { track: any; onClose: () => void }) => {
   const [photoIndex, setPhotoIndex] = useState(0);
 
@@ -90,7 +96,6 @@ export default function App() {
     duration,
     selectTrack,
     toggle,
-    status
   } = audio;
   
   useEffect(() => {
@@ -161,7 +166,7 @@ export default function App() {
                  <button onClick={() => setShowArchive(false)} className="lg:hidden p-1 text-glow mono">[X]</button>
              </div>
              <ul className="flex-1 overflow-y-auto">
-                {tracks.map((track, i) => (
+                {tracks.map((track) => (
                   <li key={track.id} onClick={() => selectTrack(track)} className={`btn-mechanical w-full justify-start p-4 border-b border-[#404040] ${currentTrack?.id === track.id ? 'bg-accent text-black' : 'hover:bg-surface'}`}>
                     <div className="flex-1 text-left"><h3 className="text-sm font-extrabold uppercase truncate">{track.title}</h3></div>
                     <span className={`mono text-[10px] ${currentTrack?.id === track.id ? 'text-black' : 'text-glow'}`}>{track.era}</span>
