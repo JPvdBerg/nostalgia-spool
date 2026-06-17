@@ -217,28 +217,38 @@ export default function App() {
               </div>
               
               {/* STICKY PLAYER CONTROLS */}
-              <div className="shrink-0 p-2 md:p-4 bg-black/50 backdrop-blur-sm border-t-2 border-border">
-                <div className="w-full h-3 bg-black border-2 border-black relative cursor-pointer" onClick={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    audio.seek((e.clientX - rect.left) / rect.width * duration);
-                }}>
-                  <motion.div className="h-full bg-accent" style={{ width: `${progressPct}%` }}/>
-                  <div className="absolute top-1/2 left-2 -translate-y-1/2 mix-blend-exclusion font-bold mono text-[9px] text-white">{currentTimeStr}</div>
-                  <div className="absolute top-1/2 right-2 -translate-y-1/2 mix-blend-exclusion font-bold mono text-[9px] text-white">{durationStr}</div>
-                </div>
+              <div className="panel shrink-0 p-2 md:p-4 border-t-2 border-black rounded-none">
+                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
+                  
+                  {/* Left: Track Info */}
+                  <div className="hidden lg:block truncate">
+                    <h4 className="font-bold uppercase truncate mono">{currentTrack?.title || 'NO_TRACK'}</h4>
+                    <p className="text-xs text-text-dim truncate mono">{currentTrack?.artist || 'UNKNOWN'}</p>
+                  </div>
 
-                <div className="flex mt-2">
-                  <div className="flex-1 flex items-center">
-                    <motion.div animate={{ rotate: isPlaying ? 360:0 }} transition={{ repeat: Infinity, ease:'linear', duration:2 }} className="w-16 h-16 rounded-full bg-surface border-2 border-black flex items-center justify-center overflow-hidden">
-                       {currentTrack && <img src={currentTrack.coverArt} className="w-full h-full object-cover" alt="cover"/>}
-                    </motion.div>
+                  {/* Center: Controls & Scrubber */}
+                  <div className="w-full max-w-sm mx-auto">
+                    <div className="flex justify-center items-center gap-px">
+                        <button onClick={() => handleSwipe({ offset: { x: 51 } } as PanInfo)} className="btn-mechanical flex-1 bg-surface text-white p-3">PRV</button>
+                        <button onClick={toggle} className="btn-mechanical flex-[1.5] bg-accent text-black font-extrabold p-3">{isPlaying ? 'HALT' : 'PLAY'}</button>
+                        <button onClick={() => handleSwipe({ offset: { x: -51 } } as PanInfo)} className="btn-mechanical flex-1 bg-surface text-white p-3">NXT</button>
+                    </div>
+                    <div className="w-full h-3 bg-black border-2 border-black relative cursor-pointer mt-2" onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        audio.seek((e.clientX - rect.left) / rect.width * duration);
+                    }}>
+                      <motion.div className="h-full bg-accent" style={{ width: `${progressPct}%` }}/>
+                      <div className="absolute inset-0 flex justify-between items-center px-2">
+                        <span className="font-bold mono text-[9px] text-white mix-blend-difference">{currentTimeStr}</span>
+                        <span className="font-bold mono text-[9px] text-white mix-blend-difference">{durationStr}</span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex-[2] flex gap-px">
-                      <button onClick={() => handleSwipe({ offset: { x: 51 } } as PanInfo)} className="btn-mechanical flex-1 bg-surface text-white">PRV</button>
-                      <button onClick={toggle} className="btn-mechanical flex-[1.5] bg-accent text-black font-extrabold">{isPlaying ? 'HALT' : 'PLAY'}</button>
-                      <button onClick={() => handleSwipe({ offset: { x: -51 } } as PanInfo)} className="btn-mechanical flex-1 bg-surface text-white">NXT</button>
+
+                  {/* Right: Visualizer */}
+                  <div className="hidden lg:flex items-center justify-end h-10 gap-1">
+                      <AudioVisualizer analyser={audio.analyser} isPlaying={isPlaying} />
                   </div>
-                  <div className="flex-1"></div>
                 </div>
               </div>
           </main>
@@ -247,3 +257,40 @@ export default function App() {
     </>
   )
 }
+
+const AudioVisualizer = ({ analyser, isPlaying }: { analyser: React.MutableRefObject<AnalyserNode | null>, isPlaying: boolean }) => {
+  const bars = Array.from({ length: 16 });
+  const data = useRef(new Uint8Array(128));
+
+  const update = () => {
+    if (isPlaying && analyser.current) {
+      analyser.current.getByteFrequencyData(data.current);
+      // Force a re-render by creating a new array copy
+      r(Date.now());
+    }
+    requestAnimationFrame(update);
+  };
+  
+  const [, r] = useState(0);
+
+  useEffect(() => {
+    const id = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying, analyser]);
+
+  return (
+    <>
+      {bars.map((_, i) => {
+        const barHeight = isPlaying ? Math.max(2, (data.current[i * 4] / 255) * 100) : 0;
+        return (
+          <motion.div
+            key={i}
+            className="w-2 bg-accent"
+            style={{ height: `${barHeight}%`, transition: 'height 0.1s ease-out' }}
+          />
+        );
+      })}
+    </>
+  );
+};
