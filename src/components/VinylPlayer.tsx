@@ -10,7 +10,6 @@ import {
   useMotionValue,
   useMotionValueEvent,
   useSpring,
-  animate,
   type MotionValue,
 } from 'framer-motion'
 import { Pause, Play, Disc3, Music2, Loader2 } from 'lucide-react'
@@ -44,9 +43,6 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-/** Seconds for one full revolution of the record. */
-const SPIN_DURATION = 3.5
-
 export default function VinylPlayer({
   track,
   isPlaying,
@@ -61,21 +57,9 @@ export default function VinylPlayer({
   onDisengage,
   onLongPressCentre,
 }: VinylPlayerProps) {
-  // Rotation lives on the parent that holds BOTH the record and the cover, so
-  // they spin in sync. A single composited transform; no per-frame React state.
-  const rotation = useMotionValue(0)
+  // The record spins via a pure CSS animation (compositor-only, no per-frame JS)
+  // and freezes in place when paused via `animation-play-state`.
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    if (!isPlaying) return
-    const controls = animate(rotation, rotation.get() + 360, {
-      ease: 'linear',
-      duration: SPIN_DURATION,
-      repeat: Infinity,
-      repeatType: 'loop',
-    })
-    return () => controls.stop()
-  }, [isPlaying, rotation])
 
   // Long-press handler for the centre label (easter egg).
   const handleCentreLabelDown = useCallback(() => {
@@ -140,11 +124,8 @@ export default function VinylPlayer({
         */}
         <div
           ref={glowRef}
-          className="pointer-events-none absolute inset-0 origin-center transform-gpu rounded-[2rem] bg-[radial-gradient(circle_at_50%_45%,rgba(194,149,110,0.9),transparent_70%)] blur-xl will-change-[opacity,transform]"
-          style={{
-            opacity: 'calc(var(--glow, 0) * 0.85)',
-            transform: 'scale(calc(1 + var(--glow, 0) * 0.08))',
-          }}
+          className="pointer-events-none absolute inset-0 rounded-[2rem] bg-[radial-gradient(circle_at_50%_45%,rgba(194,149,110,0.85),transparent_72%)] will-change-[opacity]"
+          style={{ opacity: 'calc(var(--glow, 0) * 0.8)' }}
         />
 
         {/* Tonearm — pinned at its pivot; drag onto the record to play, off to pause */}
@@ -159,9 +140,9 @@ export default function VinylPlayer({
         <div className="relative mx-auto aspect-square w-full">
           <div className="absolute inset-0 rounded-full bg-espresso/25 blur-md" />
 
-          <motion.div
-            className="transform-gpu relative h-full w-full rounded-full bg-[radial-gradient(circle_at_center,#3a2a1d_0%,#140c04_55%,#241809_100%)] shadow-soft-lg will-change-transform"
-            style={{ rotate: rotation }}
+          <div
+            className="relative h-full w-full rounded-full bg-[radial-gradient(circle_at_center,#3a2a1d_0%,#140c04_55%,#241809_100%)] shadow-soft-lg will-change-transform animate-spin-slow"
+            style={{ animationPlayState: isPlaying ? 'running' : 'paused' }}
           >
             {/* Concentric grooves */}
             {[0.92, 0.82, 0.72, 0.62].map((scale) => (
@@ -195,7 +176,7 @@ export default function VinylPlayer({
               )}
               <span className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cream shadow-inner-warm" />
             </div>
-          </motion.div>
+          </div>
 
           {/* Fixed specular glint (outside the spinning layer → reads as light) */}
           <span className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(circle_at_32%_24%,rgba(255,255,255,0.22),transparent_42%)]" />
@@ -439,14 +420,12 @@ function Tonearm({
     pivot.current = { x: r.left + r.width * 0.8, y: r.top + r.height * 0.12 }
   }, [])
 
+  // Pivot is re-measured at the start of every drag (handlePointerDown), so we
+  // only need an initial measure here. No scroll listener — calling
+  // getBoundingClientRect on every scroll tick forces a synchronous layout and
+  // is a real mobile scroll-jank source.
   useEffect(() => {
     computePivot()
-    window.addEventListener('resize', computePivot)
-    window.addEventListener('scroll', computePivot, true)
-    return () => {
-      window.removeEventListener('resize', computePivot)
-      window.removeEventListener('scroll', computePivot, true)
-    }
   }, [computePivot])
 
   useEffect(() => {

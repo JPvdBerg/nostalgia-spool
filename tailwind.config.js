@@ -38,6 +38,9 @@ export default {
       animation: {
         'fade-in': 'fade-in 0.6s ease-out both',
         shimmer: 'shimmer 1.4s infinite',
+        // Compositor-only record spin (3.5s/rev). Uses Tailwind's built-in
+        // `spin` keyframe; play/pause is toggled via animation-play-state.
+        'spin-slow': 'spin 3.5s linear infinite',
       },
     },
   },

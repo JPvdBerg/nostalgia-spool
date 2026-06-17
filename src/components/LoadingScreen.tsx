@@ -3,71 +3,84 @@ import { AnimatePresence, motion } from 'framer-motion'
 
 interface LoadingScreenProps {
   onReady: () => void
-  coverArt: string[]
-  firstPhotos: string[]
+  /** Every image used anywhere in the app (covers + all photos). */
+  images: string[]
+  /** First track's audio, warmed so playback starts instantly. */
   firstAudioSrc: string
 }
 
 /**
- * "Velvet Rope" loading screen — preloads critical first-render assets with a
- * strict 5-second timeout to prevent trapping the user on poor connections.
- * Fades out gracefully via Framer Motion.
+ * Persistent, in-memory cache of decoded images. Holding the HTMLImageElement
+ * references at module scope keeps them alive for the whole session, so the
+ * browser keeps both the decoded bitmap and its HTTP-cache entry — every later
+ * `<img src>` with the same URL renders instantly, with no re-fetch or flash.
+ *
+ * (We intentionally do NOT use localStorage here: it caps at ~5 MB, only stores
+ * strings — forcing wasteful base64 — and its synchronous reads/writes would
+ * jank the main thread, which is exactly what we're trying to avoid. The
+ * browser's own image cache, kept warm by this preload, is the right tool.)
  */
-export default function LoadingScreen({
-  onReady,
-  coverArt,
-  firstPhotos,
-  firstAudioSrc,
-}: LoadingScreenProps) {
+const imageCache = new Map<string, HTMLImageElement>()
+
+function preloadImage(src: string): Promise<void> {
+  if (imageCache.has(src)) return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    const img = new Image()
+    img.decoding = 'async'
+    img.onload = () => {
+      imageCache.set(src, img)
+      resolve()
+    }
+    img.onerror = () => resolve() // a 404 shouldn't block the whole app
+    img.src = src
+  })
+}
+
+/**
+ * "Velvet Rope" loading screen. Preloads EVERY image and waits for all of them
+ * before revealing the app, so the experience is flash-free once it opens. A
+ * generous hard cap guarantees we never trap the user if a request stalls on a
+ * flaky connection. Fades out gracefully via Framer Motion.
+ */
+const MAX_WAIT_MS = 15000
+
+export default function LoadingScreen({ onReady, images, firstAudioSrc }: LoadingScreenProps) {
   const [isVisible, setIsVisible] = useState(true)
 
   useEffect(() => {
-    let timeoutId: ReturnType<typeof setTimeout> | null = null
+    let revealTimer: ReturnType<typeof setTimeout> | null = null
+    let settled = false
 
-    const preloadAssets = async () => {
-      const imagesToLoad = [...coverArt.slice(0, 2), ...firstPhotos.slice(0, 3)]
-      const imagePromises = imagesToLoad.map(
-        (src) =>
-          new Promise<void>((resolve) => {
-            const img = new Image()
-            img.onload = () => resolve()
-            img.onerror = () => resolve() // Don't fail on image 404
-            img.src = src
-          }),
-      )
-
-      const audioPromise = new Promise<void>((resolve) => {
-        const audio = new Audio()
-        audio.preload = 'auto'
-        audio.oncanplay = () => resolve()
-        audio.onerror = () => resolve() // Don't fail on audio 404
-        audio.src = firstAudioSrc
-      })
-
-      // Use allSettled so one failure doesn't block the whole load.
-      await Promise.allSettled([...imagePromises, audioPromise])
+    const reveal = () => {
+      if (settled) return
+      settled = true
+      setIsVisible(false)
+      // Let the fade-out finish before handing control to the app.
+      revealTimer = setTimeout(onReady, 400)
     }
 
-    // Preload assets, but force resolution after 5 seconds regardless.
-    const loadPromise = Promise.race([
-      preloadAssets(),
-      new Promise<void>((resolve) =>
-        setTimeout(() => resolve(), 5000),
-      ),
-    ])
+    // Wait for every image. `allSettled` means a 404 resolves rather than hangs.
+    const imagePromises = images.map(preloadImage)
 
-    void loadPromise.then(() => {
-      setIsVisible(false)
-      // Give the fade-out animation time to complete before calling onReady.
-      timeoutId = setTimeout(() => {
-        onReady()
-      }, 400)
+    const audioPromise = new Promise<void>((resolve) => {
+      if (!firstAudioSrc) return resolve()
+      const audio = new Audio()
+      audio.preload = 'auto'
+      audio.oncanplay = () => resolve()
+      audio.onerror = () => resolve()
+      audio.src = firstAudioSrc
     })
 
+    void Promise.allSettled([...imagePromises, audioPromise]).then(reveal)
+
+    // Safety net: a single stalled request can never brick the page.
+    const cap = setTimeout(reveal, MAX_WAIT_MS)
+
     return () => {
-      if (timeoutId) clearTimeout(timeoutId)
+      clearTimeout(cap)
+      if (revealTimer) clearTimeout(revealTimer)
     }
-  }, [coverArt, firstPhotos, firstAudioSrc, onReady])
+  }, [images, firstAudioSrc, onReady])
 
   return (
     <AnimatePresence>

@@ -27,7 +27,7 @@ export const tracks: Track[] = [
       asset('images/wonderful-nothing/02.jpg'),
       asset('images/wonderful-nothing/03.jpg'),
     ],
-    themeColor: '#E8D4C0',
+    themeColor: '#CC7A33',
     linerNotes:
       "A sun-drenched moment captured in motion. The kind of afternoon that feels timeless.",
   },
@@ -43,7 +43,7 @@ export const tracks: Track[] = [
       asset('images/first-snowfall/02.jpg'),
       asset('images/first-snowfall/03.jpg'),
     ],
-    themeColor: '#D4E8F0',
+    themeColor: '#5E8FB5',
     linerNotes:
       "Silence falling like snow. Everything quieter, softer, waiting for spring.",
   },
@@ -77,7 +77,7 @@ export const tracks: Track[] = [
       asset('images/seaside-mornings/02.jpg'),
       asset('images/seaside-mornings/03.jpg'),
     ],
-    themeColor: '#A8D8DA',
+    themeColor: '#2E9D9A',
     linerNotes:
       "Salt air and first light. The kind of morning that makes you believe in new beginnings.",
   },
@@ -94,7 +94,7 @@ export const tracks: Track[] = [
       asset('images/golden-hour/03.jpg'),
       asset('images/golden-hour/04.jpg'),
     ],
-    themeColor: '#F4D9A6',
+    themeColor: '#E0942B',
     linerNotes:
       "The sky on fire. Everything glowing amber. The day's last breath, held tight.",
   },

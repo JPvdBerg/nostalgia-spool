@@ -30,10 +30,10 @@ export default function App() {
   // top-down wash; the reactive vignette (below) makes the track's colour bloom
   // prominently from the edges and pulse to the kick / bassline.
   const bgColor = useMotionValue('#F6EAD2')
-  const bgGradient = useMotionTemplate`linear-gradient(to bottom, ${bgColor} 0%, #F6EAD2 50%, #E8D7B3 100%)`
   // Bold theme-colour bleed: solid from ~55% radius outward (covers well over
   // half the page), with only a small clear core so the centred content stays
-  // legible. Opacity + scale are driven by `--bass` for the kick-drum pulse.
+  // legible. Opacity-only (driven by `--bass`) so the kick-drum pulse is a
+  // compositor-only change that never repaints.
   const bgVignette = useMotionTemplate`radial-gradient(115% 95% at 50% 45%, transparent 15%, ${bgColor} 55%)`
   const bassRef = useRef<HTMLDivElement>(null)
 
@@ -192,13 +192,17 @@ export default function App() {
   // Mini bar shows on mobile when something is loaded but we're browsing.
   const showMiniBar = currentTrack !== null && browsing
 
-  // Asset preload targets for the loading screen. Memoized so their identities
-  // stay stable — otherwise the preloader effect would re-run on every render.
+  // Preload EVERY image up front (covers + all photos) so switching tracks never
+  // shows a loading flash, and keep the first track's audio warm. Memoized for a
+  // stable identity so the preloader effect runs exactly once.
   const firstTrack = tracks[0]
-  const coverArts = useMemo(() => tracks.map((t) => t.coverArt), [])
-  const firstPhotos = useMemo(
-    () => firstTrack?.photos.map((p) => (typeof p === 'string' ? p : p.src)) ?? [],
-    [firstTrack],
+  const allImages = useMemo(
+    () =>
+      tracks.flatMap((t) => [
+        t.coverArt,
+        ...t.photos.map((p) => (typeof p === 'string' ? p : p.src)),
+      ]),
+    [],
   )
   const firstAudioSrc = firstTrack?.audioSrc || ''
 
@@ -206,43 +210,27 @@ export default function App() {
     <>
       <LoadingScreen
         onReady={handleReady}
-        coverArt={coverArts}
-        firstPhotos={firstPhotos}
+        images={allImages}
         firstAudioSrc={firstAudioSrc}
       />
       <motion.div
         className={[
-          'relative min-h-[100dvh] overflow-hidden lg:h-screen',
+          'relative min-h-[100dvh] overflow-hidden bg-gradient-to-b from-cream via-cream to-[#E8D7B3] lg:h-screen',
           !appReady ? 'hidden' : '',
         ].join(' ')}
-        style={{ backgroundImage: bgGradient }}
       >
       {/* Reactive colour bleed — the track's theme colour blooms from the edges
           and pulses to the kick / bassline via the `--bass` variable. Sits behind
-          all content; transparent centre keeps text crisp = prominent but classy. */}
+          all content; the clear centre keeps text crisp. Opacity-only (no scale or
+          blur) so the pulse is compositor-only and never repaints. */}
       <motion.div
         ref={bassRef}
         aria-hidden
-        className="pointer-events-none absolute inset-0 origin-center will-change-[opacity,transform]"
+        className="pointer-events-none absolute inset-0 will-change-[opacity]"
         style={{
           backgroundImage: bgVignette,
           opacity: 'calc(0.4 + var(--bass, 0) * 0.55)',
-          transform: 'scale(calc(1 + var(--bass, 0) * 0.09))',
         }}
-      />
-
-      {/* Decorative depth — static blurred orbs, painted once, no per-frame cost */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -left-32 -top-32 h-96 w-96 rounded-full bg-clay/15 blur-3xl"
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -right-40 top-1/3 h-[28rem] w-[28rem] rounded-full bg-brown-med/30 blur-3xl"
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -bottom-40 left-1/4 h-96 w-96 rounded-full bg-teal/10 blur-3xl"
       />
 
       <div
