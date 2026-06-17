@@ -187,7 +187,9 @@ export function useAudio(options: { onEnded?: () => void } = {}): UseAudio {
       const source = ctx.createMediaElementSource(audio)
       const analyser = ctx.createAnalyser()
       analyser.fftSize = 256
-      analyser.smoothingTimeConstant = 0.8
+      // Low smoothing keeps kick-drum transients sharp so the reactive bleed
+      // pulses tightly in time with the music (high smoothing mutes the kicks).
+      analyser.smoothingTimeConstant = 0.45
       // music → analyser → speakers
       source.connect(analyser)
       analyser.connect(ctx.destination)

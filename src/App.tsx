@@ -171,13 +171,13 @@ export default function App() {
           data = new Uint8Array(new ArrayBuffer(node.frequencyBinCount))
         }
         node.getByteFrequencyData(data)
-        // First ~4 bins ≈ sub / kick / bassline (fftSize 256 → ~172 Hz per bin).
-        const sum = data[0] + data[1] + data[2] + data[3]
-        let level = sum / 4 / 255
-        // Lift off the noise floor and expand hard so kicks / heavy bass slam.
-        level = Math.min(1, Math.max(0, (level - 0.06) / 0.94) * 1.7)
-        // Instant attack, slow release → a strong, visible pulse on every kick.
-        env = level > env ? level : env * 0.9 + level * 0.1
+        // Kick + low bass live in the bottom ~3 bins (fftSize 256 → ~172 Hz each).
+        const sum = data[0] + data[1] + data[2]
+        let level = sum / 3 / 255
+        // Aggressive floor + gain so a kick slams the value straight to full.
+        level = Math.min(1, Math.max(0, (level - 0.04) / 0.96) * 2.2)
+        // Instant attack, fast decay toward 0 → a hard, distinct thump per kick.
+        env = level > env ? level : env * 0.84
         el.style.setProperty('--bass', env.toFixed(3))
       }
       raf = requestAnimationFrame(tick)
@@ -229,7 +229,7 @@ export default function App() {
         className="pointer-events-none absolute inset-0 will-change-[opacity]"
         style={{
           backgroundImage: bgVignette,
-          opacity: 'calc(0.4 + var(--bass, 0) * 0.55)',
+          opacity: 'calc(0.25 + var(--bass, 0) * 0.75)',
         }}
       />
 
