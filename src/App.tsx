@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { motion, useMotionValueEvent } from 'framer-motion'
 import { useAudio } from './hooks/useAudio'
 import { tracks } from './data'
-import type { Track } from './types'
 
 function formatTime(s: number) {
   if (!s || !Number.isFinite(s)) return "0:00";
@@ -35,7 +34,6 @@ export default function App() {
   const {
     currentTrack,
     isPlaying,
-    isLoading,
     time,
     duration,
     selectTrack,
