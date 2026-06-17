@@ -72,6 +72,18 @@ export default function PhotoCarousel({
     [track.photos],
   )
 
+  const hasTimestamps = useMemo(
+    () => photoTimestamps.some((p) => p.timestamp !== undefined),
+    [photoTimestamps],
+  )
+
+  // Refs let the audio-sync subscription read the latest index / pause state
+  // without re-subscribing every time a photo changes.
+  const indexRef = useRef(index)
+  indexRef.current = index
+  const pausedRef = useRef(isPaused)
+  pausedRef.current = isPaused
+
   useEffect(() => {
     setIndex(0)
     setLightboxOpen(false)
@@ -86,36 +98,38 @@ export default function PhotoCarousel({
     [photoCount],
   )
 
-  // Audio-synced photo drops — if photos have timestamps, jump to them as the track plays.
+  // Audio-synced photo drops — when photos carry timestamps, advance to each
+  // one as the track crosses it. The subscription stays stable (reads the live
+  // index / pause flag from refs) so it isn't torn down every time it advances.
   useEffect(() => {
-    if (!time) return
-    const unsubscribe = time.onChange((currentTime) => {
-      let targetIndex = 0
+    if (!time || !hasTimestamps) return
+    const unsubscribe = time.on('change', (currentTime) => {
+      if (pausedRef.current) return
+      let target = -1
       for (let i = photoTimestamps.length - 1; i >= 0; i--) {
-        if (
-          photoTimestamps[i].timestamp !== undefined &&
-          photoTimestamps[i].timestamp! <= currentTime
-        ) {
-          targetIndex = i
+        const ts = photoTimestamps[i].timestamp
+        if (ts !== undefined && ts <= currentTime) {
+          target = i
           break
         }
       }
-      if (targetIndex !== index && !isPaused) {
-        setIndex(targetIndex)
-      }
+      if (target >= 0 && target !== indexRef.current) setIndex(target)
     })
     return () => unsubscribe()
-  }, [time, photoTimestamps, index, isPaused])
+  }, [time, photoTimestamps, hasTimestamps])
 
   // Auto-advance while a memory plays — loops back to the first photo, and
   // pauses while the user interacts or the lightbox is open.
   useEffect(() => {
-    if (photoCount <= 1 || isPaused || lightboxOpen) return
+    // Timestamped tracks drive their own advancement; skip the timer for them,
+    // and hold while the notes are flipped open or the lightbox is up.
+    if (photoCount <= 1 || isPaused || lightboxOpen || showingNotes || hasTimestamps)
+      return
     const timer = window.setInterval(() => {
       setIndex((prev) => (prev + 1) % photoCount)
     }, AUTOPLAY_INTERVAL)
     return () => window.clearInterval(timer)
-  }, [photoCount, index, isPaused, lightboxOpen])
+  }, [photoCount, index, isPaused, lightboxOpen, showingNotes, hasTimestamps])
 
   // Preload the neighbouring photos so a swipe never reveals a blank frame.
   useEffect(() => {
@@ -174,18 +188,22 @@ export default function PhotoCarousel({
         </div>
       </header>
 
-      {/* Stage — flips to show liner notes if available */}
+      {/* Stage — flips on its own Y axis to reveal the liner notes on the back.
+          `transformPerspective` gives the element its own depth (the CSS
+          `perspective` property only affects children), and `preserve-3d` keeps
+          both faces in the same 3D space so back-face culling works. */}
       <motion.div
         className="relative min-h-0 flex-1"
-        style={{ perspective: 1000 }}
+        style={{ transformStyle: 'preserve-3d', transformPerspective: 1200 }}
         animate={{ rotateY: showingNotes ? 180 : 0 }}
-        transition={{ duration: 0.6, ease: 'easeInOut' }}
+        transition={{ type: 'spring', stiffness: 320, damping: 32, mass: 0.7 }}
       >
         <div
-          className="group relative min-h-0 flex-1 select-none overflow-hidden rounded-2xl bg-espresso shadow-inner-warm"
+          className="group absolute inset-0 select-none overflow-hidden rounded-2xl bg-espresso shadow-inner-warm"
           onMouseEnter={() => setIsPaused(true)}
           onMouseLeave={() => setIsPaused(false)}
-          style={{ backfaceVisibility: 'hidden' }}
+          aria-hidden={showingNotes}
+          style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}
         >
         {photoCount === 0 ? (
           <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-cream/70">
@@ -234,18 +252,33 @@ export default function PhotoCarousel({
         )}
         </div>
 
-        {/* Liner Notes Back Side */}
+        {/* Liner Notes — the back of the flip */}
         <div
-          className="absolute inset-0 rounded-2xl bg-gradient-to-b from-espresso to-cocoa p-5 sm:p-7 overflow-auto flex flex-col"
-          style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
+          className="absolute inset-0 flex flex-col overflow-auto rounded-2xl bg-gradient-to-b from-espresso to-cocoa p-6 sm:p-8"
+          aria-hidden={!showingNotes}
+          style={{
+            backfaceVisibility: 'hidden',
+            WebkitBackfaceVisibility: 'hidden',
+            transform: 'rotateY(180deg)',
+          }}
         >
-          <h3 className="text-lg font-semibold text-cream mb-3">Liner Notes</h3>
-          <p className="text-sm text-cream/90 leading-relaxed flex-1">{track.linerNotes}</p>
+          <div className="mb-4 flex items-center gap-2 text-clay">
+            <BookOpen className="h-4 w-4" />
+            <span className="text-xs font-semibold uppercase tracking-[0.25em]">
+              Liner Notes
+            </span>
+          </div>
+          <p className="flex-1 text-base leading-relaxed text-cream/90 first-letter:float-left first-letter:mr-2 first-letter:font-serif first-letter:text-5xl first-letter:font-semibold first-letter:leading-none first-letter:text-clay">
+            {track.linerNotes}
+          </p>
+          <p className="mt-5 text-xs uppercase tracking-[0.2em] text-cream/50">
+            {track.artist} · {track.era}
+          </p>
         </div>
       </motion.div>
 
       {/* Dots */}
-      {photoCount > 1 && (
+      {photoCount > 1 && !showingNotes && (
         <div className="mt-4 flex items-center justify-center gap-2">
           {track.photos.map((_, i) => (
             <button

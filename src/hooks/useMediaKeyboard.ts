@@ -20,19 +20,24 @@ export function useMediaKeyboard({
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       const target = document.activeElement as HTMLElement | null
+      const tag = target?.tagName
 
-      // Don't hijack input-like elements.
-      const isInput =
-        target?.tagName === 'INPUT' ||
-        target?.tagName === 'TEXTAREA' ||
+      // Never hijack text-entry fields.
+      const isTextField =
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
         target?.getAttribute('role') === 'textbox'
 
-      if (isInput) return
+      if (isTextField) return
 
       const now = Date.now()
 
       switch (e.code) {
         case 'Space':
+          // A focused button/link already activates on Space (its onClick runs),
+          // so bail here to avoid toggling playback twice.
+          if (tag === 'BUTTON' || tag === 'A') return
           if (now - spacebarDebounce.current < 200) return // Debounce
           spacebarDebounce.current = now
           e.preventDefault() // Prevent page scroll

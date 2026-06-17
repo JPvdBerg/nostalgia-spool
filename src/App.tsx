@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { animate, AnimatePresence, motion, useMotionValue, useMotionTemplate } from 'framer-motion'
-import { Disc3, Pause, Play } from 'lucide-react'
+import { Disc3, Pause, Play, Sparkles } from 'lucide-react'
 import VinylPlayer from './components/VinylPlayer'
 import TrackList from './components/TrackList'
 import PhotoCarousel from './components/PhotoCarousel'
@@ -21,11 +21,21 @@ const panelMotion = {
 export default function App() {
   const hasTracks = tracks.length > 0
   const [appReady, setAppReady] = useState(false)
+  const handleReady = useCallback(() => setAppReady(true), [])
   const [unlockedTracks, setUnlockedTracks] = useState<Set<string>>(new Set())
+  // Title of a just-unlocked hidden track, for the celebratory toast.
+  const [unlockedTitle, setUnlockedTitle] = useState<string | null>(null)
 
-  // Dynamic background color animation (defaults to cream).
+  // Dynamic background colour (defaults to cream). The base gradient is a soft
+  // top-down wash; the reactive vignette (below) makes the track's colour bloom
+  // prominently from the edges and pulse to the kick / bassline.
   const bgColor = useMotionValue('#F6EAD2')
-  const bgGradient = useMotionTemplate`linear-gradient(to bottom, ${bgColor} 0%, #F6EAD2 50%, #D4C4B1 100%)`
+  const bgGradient = useMotionTemplate`linear-gradient(to bottom, ${bgColor} 0%, #F6EAD2 50%, #E8D7B3 100%)`
+  // Bold theme-colour bleed: solid from ~55% radius outward (covers well over
+  // half the page), with only a small clear core so the centred content stays
+  // legible. Opacity + scale are driven by `--bass` for the kick-drum pulse.
+  const bgVignette = useMotionTemplate`radial-gradient(115% 95% at 50% 45%, transparent 15%, ${bgColor} 55%)`
+  const bassRef = useRef<HTMLDivElement>(null)
 
   // Stable refs let the once-registered "ended" handler reach fresh values
   // without re-subscribing the audio element each render.
@@ -105,22 +115,32 @@ export default function App() {
   }, [currentTrack])
   nextTrackRef.current = nextTrack
 
-  // Global media keyboard controls (Spacebar, Arrow keys).
+  // Global media keyboard controls. Space always toggles playback; the arrows
+  // skip tracks ONLY when the photo carousel isn't open — while it is, the
+  // carousel owns ←/→ for photo navigation (otherwise both would fire at once).
   useMediaKeyboard({
     onPlayPause: handleToggle,
-    onNextTrack: () => nextTrack && goToTrack(nextTrack),
-    onPrevTrack: () => prevTrack && goToTrack(prevTrack),
+    onNextTrack: showCarousel ? undefined : () => nextTrack && goToTrack(nextTrack),
+    onPrevTrack: showCarousel ? undefined : () => prevTrack && goToTrack(prevTrack),
   })
 
   // Unlock a hidden track and play it immediately (via easter egg).
   const unlockAndPlay = useCallback(
     (track: Track) => {
       setUnlockedTracks((prev) => new Set([...prev, track.id]))
+      setUnlockedTitle(track.title)
       selectTrack(track)
       setBrowsing(false)
     },
     [selectTrack],
   )
+
+  // Auto-retire the "B-side unlocked" toast.
+  useEffect(() => {
+    if (!unlockedTitle) return
+    const id = window.setTimeout(() => setUnlockedTitle(null), 4000)
+    return () => window.clearTimeout(id)
+  }, [unlockedTitle])
 
   // Animate background color on track change (1.5s soft bleed).
   useEffect(() => {
@@ -131,20 +151,61 @@ export default function App() {
     })
   }, [currentTrack, bgColor])
 
+  // Drive a `--bass` CSS variable (0..1) from the low end of the spectrum so the
+  // colour vignette blooms on every kick / bass note. Ref + rAF only, so this
+  // never triggers a React render (keeps 60fps and the Web Audio graph intact).
+  useEffect(() => {
+    const el = bassRef.current
+    if (!el) return
+    if (!isPlaying || !analyser) {
+      el.style.setProperty('--bass', '0')
+      return
+    }
+    let raf = 0
+    let env = 0
+    let data: Uint8Array<ArrayBuffer> | null = null
+    const tick = () => {
+      const node = analyser.current
+      if (node) {
+        if (!data || data.length !== node.frequencyBinCount) {
+          data = new Uint8Array(new ArrayBuffer(node.frequencyBinCount))
+        }
+        node.getByteFrequencyData(data)
+        // First ~4 bins ≈ sub / kick / bassline (fftSize 256 → ~172 Hz per bin).
+        const sum = data[0] + data[1] + data[2] + data[3]
+        let level = sum / 4 / 255
+        // Lift off the noise floor and expand hard so kicks / heavy bass slam.
+        level = Math.min(1, Math.max(0, (level - 0.06) / 0.94) * 1.7)
+        // Instant attack, slow release → a strong, visible pulse on every kick.
+        env = level > env ? level : env * 0.9 + level * 0.1
+        el.style.setProperty('--bass', env.toFixed(3))
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => {
+      cancelAnimationFrame(raf)
+      el.style.setProperty('--bass', '0')
+    }
+  }, [isPlaying, analyser])
+
   // Mini bar shows on mobile when something is loaded but we're browsing.
   const showMiniBar = currentTrack !== null && browsing
 
-  // Asset preload targets for the loading screen.
+  // Asset preload targets for the loading screen. Memoized so their identities
+  // stay stable — otherwise the preloader effect would re-run on every render.
   const firstTrack = tracks[0]
-  const coverArts = tracks.map((t) => t.coverArt)
-  const firstPhotos =
-    firstTrack?.photos.map((p) => (typeof p === 'string' ? p : p.src)) || []
+  const coverArts = useMemo(() => tracks.map((t) => t.coverArt), [])
+  const firstPhotos = useMemo(
+    () => firstTrack?.photos.map((p) => (typeof p === 'string' ? p : p.src)) ?? [],
+    [firstTrack],
+  )
   const firstAudioSrc = firstTrack?.audioSrc || ''
 
   return (
     <>
       <LoadingScreen
-        onReady={() => setAppReady(true)}
+        onReady={handleReady}
         coverArt={coverArts}
         firstPhotos={firstPhotos}
         firstAudioSrc={firstAudioSrc}
@@ -156,6 +217,20 @@ export default function App() {
         ].join(' ')}
         style={{ backgroundImage: bgGradient }}
       >
+      {/* Reactive colour bleed — the track's theme colour blooms from the edges
+          and pulses to the kick / bassline via the `--bass` variable. Sits behind
+          all content; transparent centre keeps text crisp = prominent but classy. */}
+      <motion.div
+        ref={bassRef}
+        aria-hidden
+        className="pointer-events-none absolute inset-0 origin-center will-change-[opacity,transform]"
+        style={{
+          backgroundImage: bgVignette,
+          opacity: 'calc(0.4 + var(--bass, 0) * 0.55)',
+          transform: 'scale(calc(1 + var(--bass, 0) * 0.09))',
+        }}
+      />
+
       {/* Decorative depth — static blurred orbs, painted once, no per-frame cost */}
       <div
         aria-hidden
@@ -287,6 +362,25 @@ export default function App() {
                   <Play className="ml-0.5 h-5 w-5" fill="currentColor" />
                 )}
               </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Celebratory toast when the hidden B-side is unlocked */}
+      <AnimatePresence>
+        {unlockedTitle && (
+          <motion.div
+            key="unlock"
+            initial={{ y: -40, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -40, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+            className="pointer-events-none fixed inset-x-0 top-[max(1rem,env(safe-area-inset-top))] z-[60] flex justify-center px-4"
+          >
+            <div className="pointer-events-auto flex items-center gap-2 rounded-full bg-espresso px-4 py-2 text-cream shadow-soft-lg">
+              <Sparkles className="h-4 w-4 text-clay" />
+              <span className="text-sm font-semibold">B-side unlocked · {unlockedTitle}</span>
             </div>
           </motion.div>
         )}
