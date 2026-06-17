@@ -213,9 +213,15 @@ export default function VinylPlayer({
           {isPlaying && (
             <motion.span
               className="pointer-events-none absolute h-16 w-16 rounded-full bg-clay/30"
-              initial={{ scale: 1, opacity: 0.6 }}
-              animate={{ scale: 1.8, opacity: 0 }}
-              transition={{ duration: 1.8, repeat: Infinity, ease: 'easeOut' }}
+              // Fade in → expand → fade out within each cycle so the loop point is
+              // invisible (opacity 0 at both ends) — no abrupt snap-back pop.
+              animate={{ scale: [1, 1.25, 2], opacity: [0, 0.55, 0] }}
+              transition={{
+                duration: 1.8,
+                repeat: Infinity,
+                ease: 'easeOut',
+                times: [0, 0.25, 1],
+              }}
             />
           )}
           <motion.button
