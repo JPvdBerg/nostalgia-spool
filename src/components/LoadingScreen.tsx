@@ -1,108 +1,95 @@
-import { useEffect, useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 
 interface LoadingScreenProps {
-  onReady: () => void
-  /** Every image used anywhere in the app (covers + all photos). */
-  images: string[]
-  /** First track's audio, warmed so playback starts instantly. */
-  firstAudioSrc: string
+  onReady: () => void;
+  assets: string[];
 }
 
-/**
- * Persistent, in-memory cache of decoded images. Holding the HTMLImageElement
- * references at module scope keeps them alive for the whole session, so the
- * browser keeps both the decoded bitmap and its HTTP-cache entry — every later
- * `<img src>` with the same URL renders instantly, with no re-fetch or flash.
- *
- * (We intentionally do NOT use localStorage here: it caps at ~5 MB, only stores
- * strings — forcing wasteful base64 — and its synchronous reads/writes would
- * jank the main thread, which is exactly what we're trying to avoid. The
- * browser's own image cache, kept warm by this preload, is the right tool.)
- */
-const imageCache = new Map<string, HTMLImageElement>()
-
-function preloadImage(src: string): Promise<void> {
-  if (imageCache.has(src)) return Promise.resolve()
-  return new Promise<void>((resolve) => {
-    const img = new Image()
-    img.decoding = 'async'
-    img.onload = () => {
-      imageCache.set(src, img)
-      resolve()
-    }
-    img.onerror = () => resolve() // a 404 shouldn't block the whole app
-    img.src = src
-  })
-}
-
-/**
- * "Velvet Rope" loading screen. Preloads EVERY image and waits for all of them
- * before revealing the app, so the experience is flash-free once it opens. A
- * generous hard cap guarantees we never trap the user if a request stalls on a
- * flaky connection. Fades out gracefully via Framer Motion.
- */
-const MAX_WAIT_MS = 15000
-
-export default function LoadingScreen({ onReady, images, firstAudioSrc }: LoadingScreenProps) {
-  const [isVisible, setIsVisible] = useState(true)
+export default function LoadingScreen({ onReady, assets }: LoadingScreenProps) {
+  const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState('Initializing...');
 
   useEffect(() => {
-    let revealTimer: ReturnType<typeof setTimeout> | null = null
-    let settled = false
+    let loadedCount = 0;
+    const total = assets.length;
 
-    const reveal = () => {
-      if (settled) return
-      settled = true
-      setIsVisible(false)
-      // Let the fade-out finish before handing control to the app.
-      revealTimer = setTimeout(onReady, 400)
+    if (total === 0) {
+      onReady();
+      return;
     }
 
-    // Wait for every image. `allSettled` means a 404 resolves rather than hangs.
-    const imagePromises = images.map(preloadImage)
+    const preloadAsset = (url: string) => {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.src = url;
+        img.onload = () => {
+          loadedCount++;
+          setProgress(Math.floor((loadedCount / total) * 100));
+          resolve(url);
+        };
+        img.onerror = () => {
+          loadedCount++;
+          setProgress(Math.floor((loadedCount / total) * 100));
+          resolve(url); // Continue even on error
+        };
+      });
+    };
 
-    const audioPromise = new Promise<void>((resolve) => {
-      if (!firstAudioSrc) return resolve()
-      const audio = new Audio()
-      audio.preload = 'auto'
-      audio.oncanplay = () => resolve()
-      audio.onerror = () => resolve()
-      audio.src = firstAudioSrc
-    })
+    const loadAll = async () => {
+      setStatus('Fetching era metadata...');
+      await new Promise(r => setTimeout(r, 800)); // Aesthetic delay
+      
+      setStatus('Accessing image repository...');
+      // Load in batches to not choke the network
+      const batchSize = 5;
+      for (let i = 0; i < assets.length; i += batchSize) {
+        const batch = assets.slice(i, i + batchSize);
+        await Promise.all(batch.map(preloadAsset));
+      }
 
-    void Promise.allSettled([...imagePromises, audioPromise]).then(reveal)
+      setStatus('Sequence complete.');
+      await new Promise(r => setTimeout(r, 500));
+      onReady();
+    };
 
-    // Safety net: a single stalled request can never brick the page.
-    const cap = setTimeout(reveal, MAX_WAIT_MS)
-
-    return () => {
-      clearTimeout(cap)
-      if (revealTimer) clearTimeout(revealTimer)
-    }
-  }, [images, firstAudioSrc, onReady])
+    loadAll();
+  }, [assets, onReady]);
 
   return (
-    <AnimatePresence>
-      {isVisible && (
-        <motion.div
-          key="loading"
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-gradient-to-b from-cream via-cream to-beige-dark/70"
-          initial={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.4, ease: 'easeOut' }}
-        >
-          <div className="flex flex-col items-center gap-4">
-            {/* Warm, minimalist pulsing element */}
-            <motion.div
-              className="h-12 w-12 rounded-full bg-gradient-to-br from-clay to-clay-dark shadow-soft"
-              animate={{ scale: [0.8, 1.1, 0.8], opacity: [0.7, 1, 0.7] }}
-              transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+    <div className="fixed inset-0 bg-[#1a1a1a] z-[100] flex flex-col items-center justify-center p-10 font-mono">
+      <div className="w-full max-w-md">
+        <div className="flex justify-between mb-2 text-[10px] text-[#ff5722] font-bold">
+          <span>SYSTEM_BOOT_SEQUENCE</span>
+          <span>{progress}%</span>
+        </div>
+        
+        <div className="h-8 border-2 border-[#404040] bg-black p-1 flex gap-1">
+          {Array.from({ length: 20 }).map((_, i) => (
+            <div 
+              key={i}
+              className={`flex-1 transition-colors duration-300 ${i < (progress / 5) ? 'bg-[#ff5722]' : 'bg-[#262626]'}`}
             />
-            <p className="text-sm font-medium text-cocoa">Spinning up…</p>
+          ))}
+        </div>
+        
+        <div className="mt-4 flex flex-col gap-1">
+          <div className="text-xs text-[#e5e5e5]">
+            <span className="text-[#a3a3a3]">STATUS:</span> {status}
           </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  )
+          <div className="text-[10px] text-[#404040]">
+            LOCATION: CACHE_API_STORAGE_V1
+          </div>
+        </div>
+
+        <div className="mt-20 flex justify-center">
+          <motion.div 
+            animate={{ rotate: 360 }}
+            transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+            className="w-12 h-12 border-t-2 border-r-2 border-[#ff5722] rounded-full"
+          />
+        </div>
+      </div>
+    </div>
+  );
 }
