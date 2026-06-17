@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { motion, useMotionValueEvent, AnimatePresence, PanInfo } from 'framer-motion'
 import { useAudio } from './hooks/useAudio'
 import { tracks } from './data'
