@@ -3,22 +3,18 @@
 @tailwind utilities;
 
 :root {
-  --bg: #1a1a1a;
-  --surface: #262626;
-  --text: #e5e5e5;
+  --bg: #151515;
+  --surface: #202020;
+  --text: #ffffff;
   --text-dim: #a3a3a3;
-  --accent-raw: #FF4500; /* Radioactive Orange */
+  --accent-raw: #FF4500; /* Bright Orange */
   --accent-glow: rgba(255, 69, 0, 0.3);
-  --success: #4ade80;
   
   --b-width: 3px;
   --hard-shadow: 6px 6px 0px var(--accent-raw);
   
   --font-mono: "JetBrains Mono", "Fira Code", monospace;
-  --font-sans: "Inter", system-ui, sans-serif;
   --font-display: "Anton", "Arial Black", sans-serif;
-  
-  --touch-target: 48px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -28,7 +24,7 @@ html, body, #root { height: 100%; overflow: hidden; }
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: var(--font-sans);
+  font-family: var(--font-mono);
   font-size: 16px;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
@@ -36,10 +32,9 @@ body {
 
 /* --- Base Styles & Typography --- */
 .font-display { font-family: var(--font-display); text-transform: uppercase; }
-.mono { font-family: var(--font-mono); }
-.text-glow { text-shadow: 0 0 3px var(--accent-glow), 0 0 8px var(--accent-raw); }
+.text-glow { text-shadow: 0 0 5px var(--accent-glow), 0 0 10px var(--accent-raw); }
 
-/* --- Panels --- */
+/* --- Layout & Panels --- */
 .panel {
   background: var(--surface);
   border: var(--b-width) solid #000;
@@ -62,71 +57,28 @@ body {
   border: var(--b-width) solid #000;
 }
 
-/* --- High-Fidelity Interactivity --- */
-.interactive-violent {
-  transition: transform 0.05s linear, background-color 0.05s linear, color 0.05s linear;
+/* --- Interactivity --- */
+.interactive-brutalist {
+  transition: transform 0s, background-color 0s, color 0s;
 }
-.interactive-violent:hover {
-  transform: translate(-3px, -3px);
-  background-color: var(--accent-raw);
-  color: #000;
-}
-.interactive-violent:active {
-  transform: translate(3px, 3px);
-  transition-duration: 0s;
+.interactive-brutalist:active {
+  transform: translate(4px, 4px);
+  box-shadow: 2px 2px 0px var(--accent-raw);
 }
 
-/* --- Animations & Effects --- */
+/* --- CRT & Glitch Effects --- */
 .crt-overlay {
   content: "";
-  position: absolute; top: 0; left: 0;
+  position: fixed; top: 0; left: 0;
   width: 100%; height: 100%;
   background: repeating-linear-gradient(0deg, rgba(0,0,0,0.3) 0, rgba(0,0,0,0.3) 1px, transparent 1px, transparent 3px);
   pointer-events: none;
-  z-index: 1000;
+  z-index: 9999;
 }
 
-.glitch-effect {
-  animation: glitch 0.8s steps(2, end) infinite;
-}
-@keyframes glitch {
-  0% { text-shadow: 2px 2px #4ade80, -2px -2px #FF4500; transform: translate(0,0); }
-  25% { text-shadow: -2px -2px #4ade80, 2px 2px #FF4500; transform: translate(-1px, 1px); }
-  50% { text-shadow: 2px -2px #4ade80, -2px 2px #FF4500; transform: translate(1px, -1px); }
-  100% { text-shadow: -2px 2px #4ade80, 2px -2px #FF4500; transform: translate(0,0); }
-}
-
-.marquee-container {
-  overflow: hidden;
-  white-space: nowrap;
-  width: 100%;
-}
-.marquee-text {
-  display: inline-block;
-  animation: marquee 10s linear infinite;
-}
-@keyframes marquee {
-  0% { transform: translateX(0%); }
-  100% { transform: translateX(-100%); }
-}
-/* Pause on hover */
-.marquee-container:hover .marquee-text {
-  animation-play-state: paused;
-}
-
-
-/* --- Image Repo Treatment --- */
-.repo-img {
-  filter: grayscale(100%) contrast(150%);
-  transition: filter 0.1s linear;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.repo-img-container:hover .repo-img {
-  filter: none;
-}
-.repo-img-container:hover {
-  outline: var(--b-width) solid var(--accent-raw);
-  outline-offset: -3px;
+/* --- Image Grid --- */
+.image-grid-item {
+  border: 4px solid var(--accent-raw);
+  padding: 4px;
+  background: #000;
 }
